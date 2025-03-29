@@ -21,20 +21,16 @@
 #include <string>
 #include <queue>
 #include <mutex>
+#include <atomic>
 #include <condition_variable>
 #include <chrono>
 
-#include "api/rmax_apps_lib_api.h"
-
-#include "rivermax_service/rmax_ipo_receiver_service.h"
-#include "rivermax_mgr_impl/rivermax_chunk_consumer_ano.h"
 #include <holoscan/logger/logger.hpp>
+
+#include "rivermax_mgr_impl/rivermax_chunk_consumer_ano.h"
 
 #define USE_BLOCKING_QUEUE 0
 #define USE_BLOCKING_MEMPOOL 1
-
-using namespace ral::lib::core;
-using namespace ral::lib::services;
 
 namespace holoscan::advanced_network {
 
@@ -47,59 +43,39 @@ template <typename T>
 class NonBlockingQueue : public QueueInterface<T> {
   std::queue<T> queue_;
   mutable std::mutex mutex_;
+  std::atomic<bool> stop_{false};
 
  public:
-  /**
-   * @brief Enqueues an element into the queue.
-   *
-   * @param value The element to be enqueued.
-   */
   void enqueue(const T& value) override {
+    if (stop_) { return; }
     std::lock_guard<std::mutex> lock(mutex_);
     queue_.push(value);
   }
 
-  /**
-   * @brief Tries to dequeue an element from the queue.
-   *
-   * @param value Reference to store the dequeued element.
-   * @return true if an element was dequeued, false otherwise.
-   */
   bool try_dequeue(T& value) override {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (queue_.empty()) { return false; }
+    if (queue_.empty() || stop_) { return false; }
     value = queue_.front();
     queue_.pop();
     return true;
   }
 
-  /**
-   * @brief Tries to dequeue an element from the queue.
-   *
-   * @param value Reference to store the dequeued element.
-   * @param timeout Timeout for the dequeue operation (ignored).
-   * @return true if an element was dequeued, false otherwise.
-   */
   bool try_dequeue(T& value, std::chrono::milliseconds timeout) override {
     return try_dequeue(value);
   }
 
-  /**
-   * @brief Gets the size of the queue.
-   *
-   * @return The number of elements in the queue.
-   */
   size_t get_size() const override {
     std::lock_guard<std::mutex> lock(mutex_);
     return queue_.size();
   }
 
-  /**
-   * @brief Clears all elements from the queue.
-   */
   void clear() override {
     std::lock_guard<std::mutex> lock(mutex_);
     while (!queue_.empty()) { queue_.pop(); }
+  }
+
+  void stop() override {
+    stop_ = true;
   }
 };
 
@@ -113,64 +89,49 @@ class BlockingQueue : public QueueInterface<T> {
   std::queue<T> queue_;
   mutable std::mutex mutex_;
   std::condition_variable cond_;
+  std::atomic<bool> stop_{false};
 
  public:
-  /**
-   * @brief Enqueues an element into the queue.
-   *
-   * @param value The element to be enqueued.
-   */
   void enqueue(const T& value) override {
+    if (stop_) { return; }
     std::lock_guard<std::mutex> lock(mutex_);
     queue_.push(value);
     cond_.notify_one();
   }
 
-  /**
-   * @brief Tries to dequeue an element from the queue (blocks forever).
-   *
-   * @param value Reference to store the dequeued element.
-   * @return true if an element was dequeued, false otherwise.
-   */
   bool try_dequeue(T& value) override {
     std::unique_lock<std::mutex> lock(mutex_);
-    cond_.wait(lock, [this] { return !queue_.empty(); });
+    cond_.wait(lock, [this] { return !queue_.empty() || stop_; });
+    if (stop_) { return false; }
     value = queue_.front();
     queue_.pop();
     return true;
   }
 
-  /**
-   * @brief Tries to dequeue an element from the queue.
-   *
-   * @param value Reference to store the dequeued element.
-   * @param timeout Timeout for the dequeue operation.
-   * @return true if an element was dequeued, false otherwise.
-   */
   bool try_dequeue(T& value, std::chrono::milliseconds timeout) override {
     std::unique_lock<std::mutex> lock(mutex_);
-    if (!cond_.wait_for(lock, timeout, [this] { return !queue_.empty(); })) { return false; }
+    if (!cond_.wait_for(lock, timeout, [this] { return !queue_.empty() || stop_; })) {
+       return false;
+    }
+    if (stop_) { return false; }
     value = queue_.front();
     queue_.pop();
     return true;
   }
 
-  /**
-   * @brief Gets the size of the queue.
-   *
-   * @return The number of elements in the queue.
-   */
   size_t get_size() const override {
     std::lock_guard<std::mutex> lock(mutex_);
     return queue_.size();
   }
 
-  /**
-   * @brief Clears all elements from the queue.
-   */
   void clear() override {
     std::lock_guard<std::mutex> lock(mutex_);
     while (!queue_.empty()) { queue_.pop(); }
+  }
+
+  void stop() override {
+      stop_ = true;
+      cond_.notify_all();
   }
 };
 
@@ -202,6 +163,7 @@ class AnoBurstsMemoryPool : public IAnoBurstsCollection {
   std::shared_ptr<RivermaxBurst> dequeue_burst() override;
   size_t available_bursts() override { return m_queue->get_size(); };
   bool empty() override { return m_queue->get_size() == 0; };
+  void stop() override { m_queue->stop(); }
 
  private:
   std::unique_ptr<QueueInterface<std::shared_ptr<RivermaxBurst>>> m_queue;
@@ -307,6 +269,10 @@ void AnoBurstsQueue::clear() {
   m_queue->clear();
 }
 
+void AnoBurstsQueue::stop() {
+  m_queue->stop();
+}
+
 std::shared_ptr<RivermaxBurst> AnoBurstsQueue::dequeue_burst() {
   std::shared_ptr<RivermaxBurst> burst;
 
@@ -318,7 +284,7 @@ std::shared_ptr<RivermaxBurst> AnoBurstsQueue::dequeue_burst() {
 }
 
 RivermaxBurst::BurstHandler::BurstHandler(bool send_packet_ext_info, int port_id, int queue_id,
-                                      bool gpu_direct)
+                                          bool gpu_direct)
     : m_send_packet_ext_info(send_packet_ext_info),
       m_port_id(port_id),
       m_queue_id(queue_id),
@@ -342,7 +308,8 @@ std::shared_ptr<RivermaxBurst> RivermaxBurst::BurstHandler::create_burst(uint16_
   std::shared_ptr<RivermaxBurst> burst(new RivermaxBurst(m_port_id, m_queue_id, MAX_PKT_IN_BURST));
 
   if (m_send_packet_ext_info) {
-    burst->pkt_extra_info = reinterpret_cast<void**>(new RivermaxPacketExtendedInfo*[MAX_PKT_IN_BURST]);
+    burst->pkt_extra_info =
+        reinterpret_cast<void**>(new RivermaxPacketExtendedInfo*[MAX_PKT_IN_BURST]);
     for (int j = 0; j < MAX_PKT_IN_BURST; j++) {
       burst->pkt_extra_info[j] = reinterpret_cast<void*>(new RivermaxPacketExtendedInfo());
     }

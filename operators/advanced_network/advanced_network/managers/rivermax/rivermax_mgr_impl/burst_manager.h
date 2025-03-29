@@ -21,14 +21,15 @@
 #include <cstddef>
 #include <iostream>
 
+#include "rdk/services/services.h"
+
 #include "rivermax_ano_data_types.h"
-#include "rivermax_service/ipo_chunk_consumer_base.h"
-#include "rivermax_service/rmax_ipo_receiver_service.h"
 #include "advanced_network/types.h"
 #include <holoscan/logger/logger.hpp>
 
 namespace holoscan::advanced_network {
-using namespace ral::services;
+
+using namespace rivermax::dev_kit::services;
 
 /**
  * @class RivermaxBurst
@@ -213,7 +214,8 @@ class RivermaxBurst : public BurstParams {
    *                                Index boundary checks are not performed in this function.
    * @param packet_data The data of the packet to append.
    */
-  inline void set_packet_data(size_t packet_ind_in_out_burst, const RivermaxPacketData& packet_data) {
+  inline void set_packet_data(size_t packet_ind_in_out_burst,
+                              const RivermaxPacketData& packet_data) {
     auto burst_info = get_burst_info();
 
     if (burst_info->burst_flags & BurstFlags::INFO_PER_PACKET) {
@@ -250,7 +252,8 @@ class RivermaxBurst : public BurstParams {
    * @param queue_id The queue ID.
    * @param max_packets_in_burst The maximum number of packets in the burst.
    */
-  RivermaxBurst(uint16_t port_id, uint16_t queue_id, uint16_t max_packets_in_burst = MAX_PKT_IN_BURST)
+  RivermaxBurst(uint16_t port_id, uint16_t queue_id,
+                uint16_t max_packets_in_burst = MAX_PKT_IN_BURST)
       : m_max_num_packets(max_packets_in_burst) {
     hdr.hdr.port_id = port_id;
     hdr.hdr.q_id = queue_id;
@@ -340,27 +343,27 @@ class RxBurstsManager {
    * @param hds_on Flag indicating if header data splitting (HDS) is enabled.
    * @param header_stride_size Stride size for the header data.
    * @param payload_stride_size Stride size for the payload data.
-   * @return ReturnStatus indicating the success or failure of the operation.
+   * @return Status indicating the success or failure of the operation.
    */
-  inline ReturnStatus set_next_chunk_params(size_t chunk_size, bool hds_on,
-                                            size_t header_stride_size, size_t payload_stride_size) {
+  inline Status set_next_chunk_params(size_t chunk_size, bool hds_on, size_t header_stride_size,
+                                      size_t payload_stride_size) {
     m_hds_on = hds_on;
     m_header_stride_size = header_stride_size;
     m_payload_stride_size = payload_stride_size;
-    return ReturnStatus::success;
+    return Status::SUCCESS;
   }
 
   /**
    * @brief Submits the next packet to the burst manager.
    *
    * @param packet_data Extended information about the packet.
-   * @return ReturnStatus indicating the success or failure of the operation.
+   * @return Status indicating the success or failure of the operation.
    */
-  inline ReturnStatus submit_next_packet(const RivermaxPacketData& packet_data) {
+  inline Status submit_next_packet(const RivermaxPacketData& packet_data) {
     get_or_allocate_current_burst();
     if (m_cur_out_burst == nullptr) {
       HOLOSCAN_LOG_ERROR("Failed to allocate burst, running out of resources");
-      return ReturnStatus::no_free_chunks;
+      return Status::NO_FREE_BURST_BUFFERS;
     }
 
     m_cur_out_burst->append_packet(packet_data);
@@ -369,7 +372,7 @@ class RxBurstsManager {
       return enqueue_and_reset_current_burst();
     }
 
-    return ReturnStatus::success;
+    return Status::SUCCESS;
   }
 
   /**
@@ -377,17 +380,17 @@ class RxBurstsManager {
    *
    * @param burst Pointer to the burst parameters.
    * @throws logic_error If shared output queue is used.
-   * @return ReturnStatus indicating the success or failure of the operation.
+   * @return Status indicating the success or failure of the operation.
    */
-  inline ReturnStatus get_rx_burst(BurstParams** burst) {
+  inline Status get_rx_burst(BurstParams** burst) {
     if (m_using_shared_out_queue) {
       throw std::logic_error("Cannot get RX burst when using shared output queue");
     }
 
     auto out_burst = m_rx_bursts_out_queue->dequeue_burst().get();
     *burst = static_cast<BurstParams*>(out_burst);
-    if (*burst == nullptr) { return ReturnStatus::failure; }
-    return ReturnStatus::success;
+    if (*burst == nullptr) { return Status::NULL_PTR; }
+    return Status::SUCCESS;
   }
 
   /**
@@ -426,20 +429,20 @@ class RxBurstsManager {
     return m_cur_out_burst;
   }
 
-  inline ReturnStatus enqueue_and_reset_current_burst() {
+  inline Status enqueue_and_reset_current_burst() {
     if (m_cur_out_burst == nullptr) {
       HOLOSCAN_LOG_ERROR("Trying to enqueue an empty burst");
-      return ReturnStatus::failure;
+      return Status::NULL_PTR;
     }
 
     bool res = m_rx_bursts_out_queue->enqueue_burst(m_cur_out_burst);
     reset_current_burst();
     if (!res) {
       HOLOSCAN_LOG_ERROR("Failed to enqueue burst");
-      return ReturnStatus::failure;
+      return Status::NO_SPACE_AVAILABLE;
     }
 
-    return ReturnStatus::success;
+    return Status::SUCCESS;
   }
 
   /**
