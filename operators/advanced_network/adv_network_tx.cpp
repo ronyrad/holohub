@@ -69,8 +69,6 @@ int AdvNetworkOpTx::Init() {
 
 void AdvNetworkOpTx::compute(InputContext& op_input, [[maybe_unused]] OutputContext& op_output,
                              [[maybe_unused]] ExecutionContext&) {
-  int n;
-
   BurstParams* d_params;
   auto rx = op_input.receive<BurstParams*>("burst_in");
   if (!rx.has_value() || rx.value() == nullptr) {
@@ -78,30 +76,10 @@ void AdvNetworkOpTx::compute(InputContext& op_input, [[maybe_unused]] OutputCont
     return;
   }
 
-  if (impl->cfg.common_.manager_type == ManagerType::RIVERMAX) {
-    const auto tx_buf_res = impl->mgr->get_tx_metadata_buffer(&d_params);
-    if (tx_buf_res != Status::SUCCESS) {
-      HOLOSCAN_LOG_CRITICAL("Failed to get TX meta descriptor: {}", static_cast<int>(tx_buf_res));
-      return;
-    }
-
-    BurstParams* burst = rx.value();
-    memcpy(static_cast<void*>(d_params), burst, sizeof(*burst));
-
-    const auto tx_res = impl->mgr->send_tx_burst(d_params);
-    if (tx_res != Status::SUCCESS) {
-      HOLOSCAN_LOG_ERROR("Failed to send TX burst to ANO: {}", static_cast<int>(tx_res));
-      return;
-    }
-
-    // Eventually switch rivermax over to its own pools. This delete shouldn't be here
-    delete burst;
-  } else {
-    const auto tx_res = impl->mgr->send_tx_burst(rx.value());
-    if (tx_res != Status::SUCCESS) {
-      HOLOSCAN_LOG_ERROR("Failed to send TX burst to ANO: {}", static_cast<int>(tx_res));
-      return;
-    }
+  const auto tx_res = impl->mgr->send_tx_burst(rx.value());
+  if (tx_res != Status::SUCCESS) {
+    HOLOSCAN_LOG_ERROR("Failed to send TX burst to ANO: {}", static_cast<int>(tx_res));
+    return;
   }
 }
 };  // namespace holoscan::ops
