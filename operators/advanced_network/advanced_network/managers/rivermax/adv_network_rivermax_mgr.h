@@ -18,6 +18,7 @@
 #pragma once
 
 #include <string>
+#include <mutex>
 #include <yaml-cpp/yaml.h>
 
 #include "advanced_network/manager.h"
@@ -74,6 +75,7 @@ class RivermaxMgr : public Manager {
  private:
   class RivermaxMgrImpl;
   std::unique_ptr<RivermaxMgr::RivermaxMgrImpl> pImpl;
+  std::mutex initialization_mutex_;
 };
 
 };  // namespace holoscan::advanced_network
