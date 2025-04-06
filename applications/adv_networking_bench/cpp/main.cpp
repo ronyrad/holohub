@@ -14,9 +14,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#if ANO_MGR_DPDK || ANO_MGR_RIVERMAX
+#if ANO_MGR_DPDK
 #include "default_bench_op_rx.h"
 #include "default_bench_op_tx.h"
+#endif
+#if ANO_MGR_RIVERMAX
+#include "default_bench_op_rx.h"
+#include "rivermax_bench_op_tx.h"
 #endif
 #if ANO_MGR_GPUNETIO
 #include "doca_bench_op_rx.h"
@@ -106,8 +110,13 @@ class App : public holoscan::Application {
         }
       }
       if (tx_en) {
-        HOLOSCAN_LOG_ERROR("RIVERMAX ANO manager/backend doesn't support TX");
-        exit(1);
+        auto adv_net_tx =
+            make_operator<ops::AdvNetworkOpTx>("adv_network_tx", from_config("advanced_network"));
+        auto bench_tx = make_operator<ops::AdvNetworkingBenchRivermaxTxOp>(
+            "bench_tx",
+            from_config("bench_tx"),
+            make_condition<BooleanCondition>("is_alive", true));
+        add_flow(bench_tx, adv_net_tx, {{ "burst_out", "burst_in" }});
       }
 #else
       HOLOSCAN_LOG_ERROR("RIVERMAX ANO manager/backend is not supported");
