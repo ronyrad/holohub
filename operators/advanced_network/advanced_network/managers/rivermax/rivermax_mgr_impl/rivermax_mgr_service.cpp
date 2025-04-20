@@ -470,6 +470,7 @@ Status MediaSenderService::get_tx_packet_burst(BurstParams* burst) {
 
   prepare_burst_params(burst);
   burst->pkts[0][0] = frame->data.get();
+  burst->pkt_lens[0][0] = frame->data.get_size();
   burst->hdr.hdr.max_pkt = 1;  // Single packet in burst
 
   if (burst->hdr.hdr.q_id != queue_id_ || burst->hdr.hdr.port_id != port_id_) {
