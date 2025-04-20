@@ -449,7 +449,7 @@ Status MediaSenderService::get_tx_packet_burst(BurstParams* burst) {
     HOLOSCAN_LOG_ERROR("Media Sender service not initialized");
     return Status::INVALID_PARAMETER;
   }
-
+  std::lock_guard<std::mutex> lock(mutex_);
   if (processing_frame_) {
     HOLOSCAN_LOG_ERROR("MediaSenderService{}:{}::get_tx_packet_burst(): Processing frame is in progress",
       port_id_, queue_id_);
@@ -489,7 +489,7 @@ Status MediaSenderService::send_tx_burst(BurstParams* burst) {
     HOLOSCAN_LOG_ERROR("Media Sender service not initialized");
     return Status::INVALID_PARAMETER;
   }
-
+  std::lock_guard<std::mutex> lock(mutex_);
   if (!processing_frame_) {
     HOLOSCAN_LOG_ERROR("MediaSenderService{}:{}::send_tx_burst(): No frame in processing",
       port_id_, queue_id_);
@@ -513,7 +513,7 @@ Status MediaSenderService::send_tx_burst(BurstParams* burst) {
 
 bool MediaSenderService::is_tx_burst_available(BurstParams* burst) {
   if (!initialized_ || !tx_media_frame_pool_) { return false; }
-
+  std::lock_guard<std::mutex> lock(mutex_);
   // Check if we have available frames in the pool and no current processing frame
   return (tx_media_frame_pool_->get_available_frames_count() > 0 && !processing_frame_);
 }
@@ -521,6 +521,7 @@ bool MediaSenderService::is_tx_burst_available(BurstParams* burst) {
 void MediaSenderService::free_tx_burst(BurstParams* burst) {
   // If we have a processing frame but we're told to free the burst,
   // we should clear the processing frame to avoid leaks
+  std::lock_guard<std::mutex> lock(mutex_);
   HOLOSCAN_LOG_TRACE("MediaSenderService{}:{}::free_tx_burst(): Processing frame was reset",
     port_id_, queue_id_);
   if (processing_frame_) { processing_frame_.reset(); }
