@@ -399,7 +399,8 @@ Status MediaSenderMockService::send_tx_burst(BurstParams* burst) {
   }
 
   if (!processing_frame_) {
-    HOLOSCAN_LOG_ERROR("No frame in processing");
+    HOLOSCAN_LOG_ERROR("MediaSenderMockService{}:{}::send_tx_burst(): No frame in processing",
+      port_id_, queue_id_);
     return Status::INVALID_PARAMETER;
   }
 
@@ -425,7 +426,7 @@ bool MediaSenderService::post_init_setup() {
     HOLOSCAN_LOG_ERROR("Failed to allocate memory for media frame pool");
     return false;
   }
-
+  HOLOSCAN_LOG_INFO("Creating memory pool at address: {}", pool_buffer);
   tx_media_frame_pool_ = std::make_unique<MediaFramePool>(
       MEDIA_FRAME_POOL_SIZE,
       settings->media.bytes_per_frame,
@@ -450,13 +451,20 @@ Status MediaSenderService::get_tx_packet_burst(BurstParams* burst) {
   }
 
   if (processing_frame_) {
-    HOLOSCAN_LOG_ERROR("Processing frame is in progress");
+    HOLOSCAN_LOG_ERROR("MediaSenderService{}:{}::get_tx_packet_burst(): Processing frame is in progress",
+      port_id_, queue_id_);
+    return Status::INVALID_PARAMETER;
+  }
+  if (burst->hdr.hdr.q_id != queue_id_ || burst->hdr.hdr.port_id != port_id_) {
+    HOLOSCAN_LOG_ERROR("MediaSenderService{}:{}::get_tx_packet_burst(): Burst queue ID mismatch",
+      port_id_, queue_id_);
     return Status::INVALID_PARAMETER;
   }
 
   auto frame = tx_media_frame_pool_->get_frame();
   if (!frame) {
-    HOLOSCAN_LOG_ERROR("Failed to get frame from pool");
+    HOLOSCAN_LOG_ERROR("MediaSenderService{}:{}::get_tx_packet_burst(): Failed to get frame from pool",
+      port_id_, queue_id_);
     return Status::NO_FREE_BURST_BUFFERS;
   }
 
@@ -464,8 +472,15 @@ Status MediaSenderService::get_tx_packet_burst(BurstParams* burst) {
   burst->pkts[0][0] = frame->data.get();
   burst->hdr.hdr.max_pkt = 1;  // Single packet in burst
 
+  if (burst->hdr.hdr.q_id != queue_id_ || burst->hdr.hdr.port_id != port_id_) {
+    HOLOSCAN_LOG_ERROR("MediaSenderService{}:{}::get_tx_packet_burst(): Burst queue ID mismatch",
+      port_id_, queue_id_);
+  }
   processing_frame_ = std::move(frame);
-
+  HOLOSCAN_LOG_TRACE("MediaSenderService{}:{}::get_tx_packet_burst(): Processing Frame is set,"
+    "frame address: {} with size {}",
+    port_id_, queue_id_, static_cast<const void*>(processing_frame_->data.get()),
+    processing_frame_->data.get_size());
   return Status::SUCCESS;
 }
 
@@ -476,17 +491,22 @@ Status MediaSenderService::send_tx_burst(BurstParams* burst) {
   }
 
   if (!processing_frame_) {
-    HOLOSCAN_LOG_ERROR("No frame in processing");
+    HOLOSCAN_LOG_ERROR("MediaSenderService{}:{}::send_tx_burst(): No frame in processing",
+      port_id_, queue_id_);
     return Status::INVALID_PARAMETER;
   }
-
+  HOLOSCAN_LOG_TRACE("MediaSenderService{}:{}::send_tx_burst(): Out frame size is {}",
+    port_id_, queue_id_, tx_media_frame_provider_->get_queue_size());
   auto status = tx_media_frame_provider_->add_frame(std::move(processing_frame_));
   if (status != ReturnStatus::success) {
-    HOLOSCAN_LOG_ERROR("Failed to add frame to provider! Frame will be dropped");
+    HOLOSCAN_LOG_ERROR(
+      "MediaSenderService{}:{}::send_tx_burst(): Failed to add frame to provider! Frame will be dropped",
+      port_id_, queue_id_);
     processing_frame_.reset();  // Clear the frame to avoid leaks
     return Status::NO_SPACE_AVAILABLE;
   }
-
+  HOLOSCAN_LOG_TRACE("MediaSenderService{}:{}::send_tx_burst(): Frame was sent",
+    port_id_, queue_id_);
   processing_frame_.reset();  // Clear the reference as it's now managed by the provider
   return Status::SUCCESS;
 }
@@ -501,10 +521,11 @@ bool MediaSenderService::is_tx_burst_available(BurstParams* burst) {
 void MediaSenderService::free_tx_burst(BurstParams* burst) {
   // If we have a processing frame but we're told to free the burst,
   // we should clear the processing frame to avoid leaks
+  HOLOSCAN_LOG_TRACE("MediaSenderService{}:{}::free_tx_burst(): Processing frame was reset",
+    port_id_, queue_id_);
   if (processing_frame_) { processing_frame_.reset(); }
-
-  HOLOSCAN_LOG_DEBUG("MediaSender:{} free_tx_burst", service_id_);
 }
+
 void MediaSenderService::shutdown() {
   if (processing_frame_) { processing_frame_.reset(); }
   if (tx_media_frame_provider_) {
