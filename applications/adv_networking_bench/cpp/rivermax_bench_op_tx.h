@@ -455,6 +455,7 @@ class AdvNetworkingBenchRivermaxTxOp : public Operator {
       "interface_name",
       "Name of NIC from advanced_network config",
       "Name of NIC from advanced_network config");
+    spec.param<uint16_t>(queue_id_, "queue_id", "Queue ID", "Queue ID", default_queue_id);
     spec.param<uint32_t>(frame_width_, "frame_width", "Frame width", "Width of the frame", 1920);
     spec.param<uint32_t>(
         frame_height_, "frame_height", "Frame height", "Height of the frame", 1080);
@@ -471,7 +472,7 @@ class AdvNetworkingBenchRivermaxTxOp : public Operator {
     static int not_available_count = 0;
     auto msg = create_tx_burst_params();
 
-    set_header(msg, port_id_, queue_id, 1, 1);
+    set_header(msg, port_id_, queue_id_.get(), 1, 1);
 
     if (!is_tx_burst_available(msg)) {
       if (++not_available_count == 10000) {
@@ -479,7 +480,7 @@ class AdvNetworkingBenchRivermaxTxOp : public Operator {
             "TX port {}, queue {}, burst not available too many times consecutively. "
             "Make sure memory region has enough buffers",
             port_id_,
-            queue_id);
+            queue_id_.get());
         not_available_count = 0;
       }
       return;
@@ -603,9 +604,10 @@ class AdvNetworkingBenchRivermaxTxOp : public Operator {
   }
 
  private:
-  static constexpr uint16_t queue_id = 0;
+  static constexpr uint16_t default_queue_id = 0;
   int port_id_ = -1;
   Parameter<std::string> interface_name_;
+  Parameter<uint16_t> queue_id_;
   size_t frame_size_;
   Parameter<uint32_t> frame_width_;
   Parameter<uint32_t> frame_height_;
