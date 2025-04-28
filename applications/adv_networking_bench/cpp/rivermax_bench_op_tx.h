@@ -448,6 +448,7 @@ class AdvNetworkingBenchRivermaxTxOp : public Operator {
 
   void setup(OperatorSpec& spec) override {
     spec.output<std::shared_ptr<BurstParams>>("burst_out");
+    spec.param<uint16_t>(queue_id_, "queue_id", "Queue ID", "Queue ID", default_queue_id);
     spec.param<std::string>(
         address_, "address", "Address of NIC from ANO config", "Address of NIC from ANO config");
     spec.param<uint32_t>(frame_width_, "frame_width", "Frame width", "Width of the frame", 1920);
@@ -484,7 +485,7 @@ class AdvNetworkingBenchRivermaxTxOp : public Operator {
             "TX port {}, queue {}, burst not available too many times consecutively. "
             "Make sure memory region has enough buffers",
             port_id_,
-            queue_id);
+            queue_id_.get(),
         not_available_count = 0;
       }
       return;
@@ -604,8 +605,9 @@ class AdvNetworkingBenchRivermaxTxOp : public Operator {
   }
 
  private:
-  static constexpr uint16_t queue_id = 0;
+  static constexpr uint16_t default_queue_id = 0;
   int port_id_ = -1;
+  Parameter<uint16_t> queue_id_;
   Parameter<std::string> address_;
   size_t frame_size_;
   Parameter<uint32_t> frame_width_;
