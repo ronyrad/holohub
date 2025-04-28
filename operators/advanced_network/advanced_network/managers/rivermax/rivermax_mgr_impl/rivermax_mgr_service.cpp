@@ -524,7 +524,6 @@ Status MediaSenderService::send_tx_burst(BurstParams* burst) {
 
 bool MediaSenderService::is_tx_burst_available(BurstParams* burst) {
   if (!initialized_ || !tx_media_frame_pool_) { return false; }
-  std::lock_guard<std::mutex> lock(mutex_);
   //  Check if we have available frames in the pool and no current processing frame
   return (tx_media_frame_pool_->get_available_frames_count() > 0 && !processing_frame_);
 }
