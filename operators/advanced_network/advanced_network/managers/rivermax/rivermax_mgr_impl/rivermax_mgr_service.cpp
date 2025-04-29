@@ -58,7 +58,8 @@ bool RivermaxManagerRxService::initialize() {
 
   rx_packet_processor_ = std::make_shared<RxPacketProcessor>(rx_burst_manager_);
 
-  auto rivermax_chunk_consumer = std::make_unique<RivermaxChunkConsumerAno>(rx_packet_processor_);
+  auto rivermax_chunk_consumer = std::make_unique<RivermaxChunkConsumerAno>(rx_packet_processor_,
+    max_chunk_size_);
 
   auto status = rx_service_->set_receive_data_consumer(0, std::move(rivermax_chunk_consumer));
   if (status != ReturnStatus::success) {
