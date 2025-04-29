@@ -532,8 +532,6 @@ class AdvNetworkingBenchRivermaxTxOp : public Operator {
                        queue_id_.get(),
                        sent,
                        err);
-   
-
   }
 
   enum class VideoSampling { RGB, YCbCr_4_2_2, YCbCr_4_2_0, YCbCr_4_4_4 };
