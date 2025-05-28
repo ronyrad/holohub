@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 cmake_minimum_required(VERSION 3.20)
-project(adv_network_media_rx)
+project(advanced_network_media_rx)
 
 find_package(holoscan 2.6 REQUIRED CONFIG
              PATHS "/opt/nvidia/holoscan" "/workspace/holoscan-sdk/install")
@@ -27,17 +27,16 @@ add_library(holoscan::ops::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 
 target_include_directories(${PROJECT_NAME} PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_LIST_DIR}/../../advanced_network
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../advanced_network
     ${CMAKE_CURRENT_SOURCE_DIR}/../../advanced_network/advanced_network
 )
-
 
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
     holoscan::core
     GXF::multimedia
     rivermax-dev-kit
-    adv_network_media_common
+    advanced_network_media_common
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES

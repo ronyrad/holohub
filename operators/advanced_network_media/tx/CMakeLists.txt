@@ -35,7 +35,7 @@ target_link_libraries(${PROJECT_NAME}
     holoscan::core
     GXF::multimedia
     rivermax-dev-kit
-    adv_network_media_common
+    advanced_network_media_common
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES

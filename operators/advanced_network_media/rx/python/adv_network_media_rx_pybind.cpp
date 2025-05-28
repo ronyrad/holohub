@@ -25,7 +25,7 @@
 #include <memory>
 #include <string>
 
-#include "../../operator_util.hpp"
+#include "../../../operator_util.hpp"
 #include <holoscan/core/fragment.hpp>
 #include <holoscan/core/gxf/gxf_operator.hpp>
 #include <holoscan/core/operator_spec.hpp>
@@ -58,7 +58,7 @@ class PyAdvNetworkMediaOpRx : public AdvNetworkMediaOpRx {
 
   // Define a constructor that fully initializes the object.
   PyAdvNetworkMediaOpRx(Fragment* fragment, const py::args& args,
-                        const std::string& name = "adv_network_media_rx") {
+                        const std::string& name = "advanced_network_media_rx") {
     this->add_arg(fragment->from_config("advanced_network_media_rx"));
     add_positional_condition_and_resource_args(this, args);
     name_ = name;
@@ -68,11 +68,11 @@ class PyAdvNetworkMediaOpRx : public AdvNetworkMediaOpRx {
   }
 };
 
-PYBIND11_MODULE(_adv_network_media_rx, m) {
+PYBIND11_MODULE(_advanced_network_media_rx, m) {
   m.doc() = R"pbdoc(
         Holoscan SDK Python Bindings
         ---------------------------------------
-        .. currentmodule:: _adv_network_media_rx
+        .. currentmodule:: _advanced_network_media_rx
         .. autosummary::
            :toctree: _generate
            add
@@ -92,7 +92,7 @@ PYBIND11_MODULE(_adv_network_media_rx, m) {
       m, "AdvNetworkMediaOpRx", doc::AdvNetworkMediaOpRx::doc_AdvNetworkMediaOpRx)
       .def(py::init<Fragment*, const py::args&, const std::string&>(),
            "fragment"_a,
-           "name"_a = "adv_network_media_rx"s,
+           "name"_a = "advanced_network_media_rx"s,
            doc::AdvNetworkMediaOpRx::doc_AdvNetworkMediaOpRx_python)
       .def("initialize", &AdvNetworkMediaOpRx::initialize, doc::AdvNetworkMediaOpRx::doc_initialize)
       .def("setup", &AdvNetworkMediaOpRx::setup, "spec"_a, doc::AdvNetworkMediaOpRx::doc_setup);

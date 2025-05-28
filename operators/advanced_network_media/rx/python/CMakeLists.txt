@@ -14,15 +14,19 @@
 # limitations under the License.
 
 include(pybind11_add_holohub_module)
+find_package(holoscan 2.6 REQUIRED CONFIG
+             PATHS "/opt/nvidia/holoscan" "/workspace/holoscan-sdk/install") # Remove if holoscan logger dependency removed
+
+set(MODULE_NAME advanced_network_media_rx)
+set(MODULE_CLASS_NAME "*")
+             
 pybind11_add_holohub_module(
-    CPP_CMAKE_TARGET adv_network_media_rx
+    CPP_CMAKE_TARGET advanced_network_media_rx
     CLASS_NAME "AdvNetworkMediaOpRx"
     SOURCES adv_network_media_rx_pybind.cpp
 )
 
 
-set(MODULE_NAME adv_network_media_rx)
-set(MODULE_CLASS_NAME "*")
 
 target_link_libraries(${MODULE_NAME}_python
 PRIVATE
@@ -40,5 +44,5 @@ set_target_properties(${MODULE_NAME}_python PROPERTIES
 
 configure_file(
     ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/pybind11/__init__.py
-    ${CMAKE_PYBIND11_HOLOHUB_MODULE_OUT_DIR}/adv_network_media_rx/__init__.py
+    ${CMAKE_PYBIND11_HOLOHUB_MODULE_OUT_DIR}/advanced_network_media_rx/__init__.py
 )

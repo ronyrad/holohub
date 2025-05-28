@@ -15,8 +15,8 @@
  * limitations under the License.
  */
 
-#ifndef PYHOLOHUB_OPERATORS_ADV_NET_RX_PYDOC_HPP
-#define PYHOLOHUB_OPERATORS_ADV_NET_RX_PYDOC_HPP
+#ifndef PYHOLOHUB_OPERATORS_ADV_NET_MEDIA_RX_PYDOC_HPP
+#define PYHOLOHUB_OPERATORS_ADV_NET_MEDIA_RX_PYDOC_HPP
 
 #include <string>
 
@@ -27,13 +27,13 @@ namespace holoscan::doc {
 namespace AdvNetworkMediaOpRx {
 
 PYDOC(AdvNetworkMediaOpRx, R"doc(
-iCardio Multi-AI demo application visualization operator.
+Advanced Networking Media Receiver operator.
 )doc")
 
 // PyAdvNetworkMediaOpRx Constructor
 // TODO: update
 PYDOC(AdvNetworkMediaOpRx_python, R"doc(
-iCardio Multi-AI demo application visualization operator.
+Advanced Networking Media Receiver operator.
 
 Parameters
 ----------
@@ -80,4 +80,4 @@ spec : ``holoscan.core.OperatorSpec``
 
 }  // namespace holoscan::doc
 
-#endif  // PYHOLOHUB_OPERATORS_ADV_NET_RX_PYDOC_HPP
+#endif  // PYHOLOHUB_OPERATORS_ADV_NET_MEDIA_RX_PYDOC_HPP
