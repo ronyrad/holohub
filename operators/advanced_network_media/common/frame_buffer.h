@@ -43,29 +43,29 @@ class FrameBufferBase : public IFrameBuffer {
 
   size_t get_size() const override { return frame_size_; }
   size_t get_aligned_size() const override { return frame_size_; }
-  MemoryType get_memory_type() const override { return memory_type_; }
+  MemoryLocation get_memory_location() const override { return memory_location_; }
 
  protected:
   /**
-   * @brief Converts GXF memory storage type to MemoryType enum.
+   * @brief Converts GXF memory storage type to MemoryLocation enum.
    *
    * @param storage_type The GXF memory storage type to convert.
-   * @return The corresponding MemoryType.
+   * @return The corresponding MemoryLocation.
    */
-  inline MemoryType from_gxf_memory_type(nvidia::gxf::MemoryStorageType storage_type) const {
+  inline MemoryLocation from_gxf_memory_type(nvidia::gxf::MemoryStorageType storage_type) const {
     switch (storage_type) {
       case nvidia::gxf::MemoryStorageType::kHost:
       case nvidia::gxf::MemoryStorageType::kSystem:
-        return MemoryType::Host;
+        return MemoryLocation::Host;
       case nvidia::gxf::MemoryStorageType::kDevice:
-        return MemoryType::Device;
+        return MemoryLocation::Gpu;
       default:
-        return MemoryType::Host;
+        return MemoryLocation::Host;
     }
   }
 
  protected:
-  MemoryType memory_type_;
+  MemoryLocation memory_location_;
   nvidia::gxf::MemoryStorageType src_storage_type_;
   size_t frame_size_;
   nvidia::gxf::Entity entity_;

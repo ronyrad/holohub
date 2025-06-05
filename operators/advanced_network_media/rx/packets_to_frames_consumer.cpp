@@ -44,7 +44,7 @@ void PacketsToFramesConsumer::process_incoming_packet(const RTP_EX_SRDS* header,
   if (!is_contiguous_memory) {
     // Determine the appropriate memory copy direction based on frame buffer's memory type
     cudaMemcpyKind copy_kind;
-    if (frame_->get_memory_type() == MemoryType::Host) {
+    if (frame_->get_memory_location() == MemoryLocation::Host) {
       copy_kind = cudaMemcpyDeviceToHost;
     } else {
       copy_kind = cudaMemcpyDeviceToDevice;
@@ -79,7 +79,7 @@ void PacketsToFramesConsumer::process_incoming_packet(const RTP_EX_SRDS* header,
   if (frame_full && header->m) {
     // Determine the appropriate memory copy direction based on frame buffer's memory type
     cudaMemcpyKind copy_kind;
-    if (frame_->get_memory_type() == MemoryType::Host) {
+    if (frame_->get_memory_location() == MemoryLocation::Host) {
       copy_kind = cudaMemcpyDeviceToHost;
     } else {
       copy_kind = cudaMemcpyDeviceToDevice;

@@ -89,8 +89,8 @@ class AdvNetworkMediaOpRxImpl : public PacketsToFramesConsumerUser {
     }
 
     // Determine memory location type
-    const auto& memory_type_str = parent_.memory_type_.get();
-    if (memory_type_str == "host") {
+    const auto& memory_location_str = parent_.memory_location_.get();
+    if (memory_location_str == "host") {
       storage_type_ = nvidia::gxf::MemoryStorageType::kHost;
       HOLOSCAN_LOG_INFO("Using Host memory location");
     } else {
@@ -330,9 +330,9 @@ void AdvNetworkMediaOpRx::setup(OperatorSpec& spec) {
              "Output Format",
              "Output format type ('video_buffer' or 'tensor')",
              std::string("video_buffer"));
-  spec.param(memory_type_,
-             "memory_type",
-             "Memory Type",
+  spec.param(memory_location_,
+             "memory_location",
+             "Memory Location",
              "Memory location for frame buffers ('host' or 'device')",
              std::string("device"));
 }

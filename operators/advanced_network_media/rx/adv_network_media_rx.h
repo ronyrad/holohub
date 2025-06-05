@@ -63,7 +63,7 @@ class AdvNetworkMediaOpRx : public Operator {
   Parameter<std::string> video_format_;
   Parameter<bool> hds_;
   Parameter<std::string> output_format_;
-  Parameter<std::string> memory_type_;
+  Parameter<std::string> memory_location_;
 
  private:
   friend class AdvNetworkMediaOpRxImpl;

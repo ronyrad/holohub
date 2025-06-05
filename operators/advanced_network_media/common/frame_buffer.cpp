@@ -47,7 +47,7 @@ VideoBufferFrameBuffer::VideoBufferFrameBuffer(nvidia::gxf::Entity entity) {
   width_ = info.width;
   height_ = info.height;
   src_storage_type_ = buffer_->storage_type();
-  memory_type_ = from_gxf_memory_type(src_storage_type_);
+  memory_location_ = from_gxf_memory_type(src_storage_type_);
   frame_size_ = buffer_->size();
   format_ = info.color_format;
   planes_ = info.color_planes;
@@ -100,7 +100,7 @@ TensorFrameBuffer::TensorFrameBuffer(nvidia::gxf::Entity entity, nvidia::gxf::Vi
   width_ = shape.dimension(1);
   height_ = shape.dimension(0);
   src_storage_type_ = tensor_->storage_type();
-  memory_type_ = from_gxf_memory_type(src_storage_type_);
+  memory_location_ = from_gxf_memory_type(src_storage_type_);
   frame_size_ = tensor_->size();
   format_ = format;
 }
@@ -140,7 +140,7 @@ AllocatedVideoBufferFrameBuffer::AllocatedVideoBufferFrameBuffer(
   height_ = height;
   format_ = format;
   src_storage_type_ = storage_type;
-  memory_type_ = from_gxf_memory_type(storage_type);
+  memory_location_ = from_gxf_memory_type(storage_type);
 }
 
 Status AllocatedVideoBufferFrameBuffer::validate_format_compliance(
@@ -207,7 +207,7 @@ AllocatedTensorFrameBuffer::AllocatedTensorFrameBuffer(
   channels_ = channels;
   format_ = format;
   src_storage_type_ = storage_type;
-  memory_type_ = from_gxf_memory_type(storage_type);
+  memory_location_ = from_gxf_memory_type(storage_type);
 }
 
 Status AllocatedTensorFrameBuffer::validate_format_compliance(
