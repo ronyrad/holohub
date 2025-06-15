@@ -20,7 +20,8 @@ find_package(holoscan 2.6 REQUIRED CONFIG
 
 add_library(${PROJECT_NAME} SHARED
     adv_network_media_rx.cpp
-    packets_to_frames_consumer.cpp
+    burst_processor.cpp
+    packets_to_frames_converter.cpp
 )
 
 add_library(holoscan::ops::${PROJECT_NAME} ALIAS ${PROJECT_NAME})

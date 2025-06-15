@@ -19,7 +19,7 @@ find_package(holoscan 2.6 REQUIRED CONFIG
 
 set(MODULE_NAME advanced_network_media_rx)
 set(MODULE_CLASS_NAME "*")
-             
+
 pybind11_add_holohub_module(
     CPP_CMAKE_TARGET advanced_network_media_rx
     CLASS_NAME "AdvNetworkMediaOpRx"

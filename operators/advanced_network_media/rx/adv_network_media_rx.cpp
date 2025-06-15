@@ -20,11 +20,13 @@
 
 #include "adv_network_media_rx.h"
 #include "advanced_network/common.h"
-#include "adv_network_media_rx_common.h"
-#include "packets_to_frames_consumer.h"
+#include "../common/adv_network_media_common.h"
+#include "packets_to_frames_converter.h"
+#include "burst_processor.h"
 #include <holoscan/utils/cuda_stream_handler.hpp>
 #include "../common/frame_buffer.h"
 #include "../common/video_parameters.h"
+#include "advanced_network/managers/rivermax/rivermax_ano_data_types.h"
 
 using namespace holoscan::advanced_network;
 
@@ -40,10 +42,10 @@ enum class OutputFormatType { VIDEO_BUFFER, TENSOR };
  * @class AdvNetworkMediaOpRxImpl
  * @brief Implementation class for the AdvNetworkMediaOpRx operator.
  *
- * Handles the actual processing of media frames received from
- * the network infrastructure.
+ * Handles high-level network management, frame pool management, and
+ * coordinates with BurstProcessor for packet-level operations.
  */
-class AdvNetworkMediaOpRxImpl : public PacketsToFramesConsumerUser {
+class AdvNetworkMediaOpRxImpl : public IFrameProvider {
  public:
   /**
    * @brief Constructs an implementation for the given operator.
@@ -101,7 +103,9 @@ class AdvNetworkMediaOpRxImpl : public PacketsToFramesConsumerUser {
     // Create pool of allocated frame buffers
     create_frame_pool();
 
-    packets_to_frames_consumer_.reset(new PacketsToFramesConsumer(this));
+    // Create converter and burst processor
+    auto converter = PacketsToFramesConverter::create(this);
+    burst_processor_ = std::make_unique<BurstProcessor>(std::move(converter));
   }
 
   /**
@@ -134,13 +138,13 @@ class AdvNetworkMediaOpRxImpl : public PacketsToFramesConsumerUser {
             video_format_,
             storage_type_));
       } else {
-        frames_pool_.push_back(
-            std::make_shared<AllocatedVideoBufferFrameBuffer>(data,
-                                                              frame_size_,
-                                                              parent_.frame_width_.get(),
-                                                              parent_.frame_height_.get(),
-                                                              video_format_,
-                                                              storage_type_));
+        frames_pool_.push_back(std::make_shared<AllocatedVideoBufferFrameBuffer>(
+            data,
+            frame_size_,
+            parent_.frame_width_.get(),
+            parent_.frame_height_.get(),
+            video_format_,
+            storage_type_));
       }
     }
   }
@@ -194,41 +198,56 @@ class AdvNetworkMediaOpRxImpl : public PacketsToFramesConsumerUser {
 
     append_to_frame(burst);
 
-    auto frame = pop_ready_frame();
-    if (!frame) { return; }
+    size_t frames_emitted = 0;
+    while (auto frame = pop_ready_frame()) {
+      HOLOSCAN_LOG_INFO("Emitting frame {}: {} bytes", frames_emitted + 1, frame->get_size());
+      auto result = create_frame_entity(frame, context);
+      op_output.emit(result);
+      frames_emitted++;
+    }
 
-    auto result = create_frame_entity(frame, context);
-    op_output.emit(result);
+    if (frames_emitted > 0) {
+      HOLOSCAN_LOG_TRACE("Total frames emitted from this burst: {}", frames_emitted);
+    }
   }
 
-#define GPU_PKTS 1
-#define CPU_PKTS 0
   /**
    * @brief Appends packet data from a burst to the current frame being constructed.
    *
    * @param burst The burst containing packets to process.
    */
   void append_to_frame(BurstParams* burst) {
-    // Iterate through the packets in burst and append them to frame_buffer_
-    for (size_t current_packet_index = 0; current_packet_index < burst->hdr.hdr.num_pkts;
-         current_packet_index++) {
-      RTP_EX_SRDS* header =
-          reinterpret_cast<RTP_EX_SRDS*>(burst->pkts[CPU_PKTS][current_packet_index]);
-      uint8_t* payload =
-          parent_.hds_.get()
-              ? reinterpret_cast<uint8_t*>(burst->pkts[GPU_PKTS][current_packet_index])
-              : reinterpret_cast<uint8_t*>(burst->pkts[CPU_PKTS][current_packet_index]) +
-                    sizeof(RTP_EX_SRDS);
-      packets_to_frames_consumer_->process_incoming_packet(header, payload);
-      if (!packets_to_frames_consumer_->is_processing_copy()) {
-        while (!pending_burst_queue_.empty()) {
-          auto burst_to_free = pending_burst_queue_[pending_burst_queue_.size() - 1];
-          free_all_packets_and_burst_rx(burst_to_free);
-          pending_burst_queue_.pop_back();
-        }
+    // Count ready frames before processing
+    size_t ready_frames_before = ready_frames_.size();
+
+    HOLOSCAN_LOG_INFO("Processing burst: ready_frames_before={}, queue_size={}",
+                      ready_frames_before,
+                      bursts_awaiting_cleanup_.size());
+
+    burst_processor_->process_burst(burst, parent_.hds_.get());
+
+    // Count ready frames after processing
+    size_t ready_frames_after = ready_frames_.size();
+
+    HOLOSCAN_LOG_INFO("Burst processed: ready_frames_after={}", ready_frames_after);
+
+    // If new frames were completed, free all accumulated bursts
+    if (ready_frames_after > ready_frames_before) {
+      size_t frames_completed = ready_frames_after - ready_frames_before;
+      HOLOSCAN_LOG_INFO("{} frame(s) completed, freeing {} accumulated bursts",
+                        frames_completed,
+                        bursts_awaiting_cleanup_.size());
+      while (!bursts_awaiting_cleanup_.empty()) {
+        auto burst_to_free = bursts_awaiting_cleanup_.front();
+        free_all_packets_and_burst_rx(burst_to_free);
+        bursts_awaiting_cleanup_.pop_front();
       }
     }
-    pending_burst_queue_.push_back(burst);
+
+    // Add current burst to the queue after freeing previous bursts
+    bursts_awaiting_cleanup_.push_back(burst);
+
+    HOLOSCAN_LOG_INFO("Final queue_size={}", bursts_awaiting_cleanup_.size());
   }
 
   /**
@@ -283,15 +302,16 @@ class AdvNetworkMediaOpRxImpl : public PacketsToFramesConsumerUser {
 
   void on_new_frame(std::shared_ptr<FrameBufferBase> frame) override {
     ready_frames_.push_back(frame);
+    HOLOSCAN_LOG_INFO("New frame ready: {}", frame->get_size());
   }
 
  private:
   AdvNetworkMediaOpRx& parent_;
   int port_id_;
-  std::unique_ptr<PacketsToFramesConsumer> packets_to_frames_consumer_;
+  std::unique_ptr<BurstProcessor> burst_processor_;
   std::deque<std::shared_ptr<FrameBufferBase>> frames_pool_;
   std::deque<std::shared_ptr<FrameBufferBase>> ready_frames_;
-  std::vector<BurstParams*> pending_burst_queue_;
+  std::deque<BurstParams*> bursts_awaiting_cleanup_;
   size_t total_packets_received_ = 0;
   nvidia::gxf::VideoFormat video_format_;
   size_t frame_size_;
@@ -333,7 +353,7 @@ void AdvNetworkMediaOpRx::setup(OperatorSpec& spec) {
   spec.param(memory_location_,
              "memory_location",
              "Memory Location",
-             "Memory location for frame buffers ('host' or 'device')",
+             "Memory location for frame buffers ('host' or 'devices')",
              std::string("device"));
 }
 

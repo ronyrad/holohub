@@ -58,7 +58,7 @@ class FrameBufferBase : public IFrameBuffer {
       case nvidia::gxf::MemoryStorageType::kSystem:
         return MemoryLocation::Host;
       case nvidia::gxf::MemoryStorageType::kDevice:
-        return MemoryLocation::Gpu;
+        return MemoryLocation::GPU;
       default:
         return MemoryLocation::Host;
     }
