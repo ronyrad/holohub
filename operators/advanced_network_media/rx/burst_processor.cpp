@@ -27,10 +27,7 @@ BurstProcessor::BurstProcessor(std::shared_ptr<PacketsToFramesConverter> convert
 void BurstProcessor::process_burst(BurstParams* burst, bool hds_enabled) {
   if (!burst || burst->hdr.hdr.num_pkts == 0) { return; }
 
-  // Ensure converter has proper configuration (initialize once, validate on subsequent calls)
   ensure_converter_configuration(burst);
-
-  // Process all packets in the burst
   process_packets_in_burst(burst, hds_enabled);
 }
 
@@ -39,6 +36,7 @@ void BurstProcessor::ensure_converter_configuration(BurstParams* burst) {
   static size_t last_header_stride = 0;
   static size_t last_payload_stride = 0;
   static bool last_hds_on = false;
+  static bool last_payload_on_cpu = false;
 
   // Access burst extended info from custom_burst_data
   const auto* burst_info =
@@ -46,48 +44,61 @@ void BurstProcessor::ensure_converter_configuration(BurstParams* burst) {
 
   if (!burst_info_initialized) {
     // First-time initialization
-    packets_to_frames_converter_->initialize_with_burst_info(
+    packets_to_frames_converter_->configure_burst_parameters(
         burst_info->header_stride_size, burst_info->payload_stride_size, burst_info->hds_on);
+
+    // Set source memory location based on burst info
+    packets_to_frames_converter_->set_source_memory_location(burst_info->payload_on_cpu);
 
     last_header_stride = burst_info->header_stride_size;
     last_payload_stride = burst_info->payload_stride_size;
     last_hds_on = burst_info->hds_on;
+    last_payload_on_cpu = burst_info->payload_on_cpu;
     burst_info_initialized = true;
 
     HOLOSCAN_LOG_INFO(
-        "Burst configuration initialized: header_stride={}, payload_stride={}, hds_on={}",
+        "Burst configuration initialized: header_stride={}, payload_stride={}, hds_on={}, "
+        "payload_on_cpu={}",
         burst_info->header_stride_size,
         burst_info->payload_stride_size,
-        burst_info->hds_on);
+        burst_info->hds_on,
+        burst_info->payload_on_cpu);
   } else {
     // Check for configuration changes after strategy confirmation
-    bool config_changed = (last_header_stride != burst_info->header_stride_size ||
-                           last_payload_stride != burst_info->payload_stride_size ||
-                           last_hds_on != burst_info->hds_on);
+    bool config_changed =
+        (last_header_stride != burst_info->header_stride_size ||
+         last_payload_stride != burst_info->payload_stride_size ||
+         last_hds_on != burst_info->hds_on || last_payload_on_cpu != burst_info->payload_on_cpu);
 
     if (config_changed) {
       HOLOSCAN_LOG_WARN(
           "Burst configuration changed after strategy confirmation - forcing re-detection");
-      HOLOSCAN_LOG_INFO("Old config: header_stride={}, payload_stride={}, hds_on={}",
-                        last_header_stride,
-                        last_payload_stride,
-                        last_hds_on);
-      HOLOSCAN_LOG_INFO("New config: header_stride={}, payload_stride={}, hds_on={}",
-                        burst_info->header_stride_size,
-                        burst_info->payload_stride_size,
-                        burst_info->hds_on);
+      HOLOSCAN_LOG_INFO(
+          "Old config: header_stride={}, payload_stride={}, hds_on={}, payload_on_cpu={}",
+          last_header_stride,
+          last_payload_stride,
+          last_hds_on,
+          last_payload_on_cpu);
+      HOLOSCAN_LOG_INFO(
+          "New config: header_stride={}, payload_stride={}, hds_on={}, payload_on_cpu={}",
+          burst_info->header_stride_size,
+          burst_info->payload_stride_size,
+          burst_info->hds_on,
+          burst_info->payload_on_cpu);
 
       // Force strategy re-detection due to configuration change
       packets_to_frames_converter_->force_strategy_redetection();
 
       // Re-initialize with new configuration
-      packets_to_frames_converter_->initialize_with_burst_info(
+      packets_to_frames_converter_->configure_burst_parameters(
           burst_info->header_stride_size, burst_info->payload_stride_size, burst_info->hds_on);
 
-      // Update stored configuration
+      packets_to_frames_converter_->set_source_memory_location(burst_info->payload_on_cpu);
+
       last_header_stride = burst_info->header_stride_size;
       last_payload_stride = burst_info->payload_stride_size;
       last_hds_on = burst_info->hds_on;
+      last_payload_on_cpu = burst_info->payload_on_cpu;
     }
   }
 

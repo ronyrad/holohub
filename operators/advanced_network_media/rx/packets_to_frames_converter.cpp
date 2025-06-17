@@ -21,6 +21,35 @@
 
 namespace holoscan::ops {
 
+cudaMemcpyKind MemoryCopyHelper::get_copy_kind(nvidia::gxf::MemoryStorageType src_storage_type,
+                                               nvidia::gxf::MemoryStorageType dst_storage_type) {
+  // Determine copy kind based on source and destination combinations
+  if (src_storage_type == nvidia::gxf::MemoryStorageType::kHost) {
+    if (dst_storage_type == nvidia::gxf::MemoryStorageType::kHost) {
+      return cudaMemcpyHostToHost;
+    } else {
+      return cudaMemcpyHostToDevice;
+    }
+  } else {  // nvidia::gxf::MemoryStorageType::kDevice
+    if (dst_storage_type == nvidia::gxf::MemoryStorageType::kHost) {
+      return cudaMemcpyDeviceToHost;
+    } else {
+      return cudaMemcpyDeviceToDevice;
+    }
+  }
+}
+
+nvidia::gxf::MemoryStorageType MemoryCopyHelper::to_storage_type(MemoryLocation location) {
+  switch (location) {
+    case MemoryLocation::Host:
+      return nvidia::gxf::MemoryStorageType::kHost;
+    case MemoryLocation::GPU:
+      return nvidia::gxf::MemoryStorageType::kDevice;
+    default:
+      return nvidia::gxf::MemoryStorageType::kDevice;
+  }
+}
+
 void ContiguousStrategy::process_packet(PacketsToFramesConverter& converter, uint8_t* payload,
                                         size_t payload_size) {
   if (current_payload_start_ptr_ == nullptr) {
@@ -55,12 +84,13 @@ void ContiguousStrategy::execute_copy(PacketsToFramesConverter& converter) {
   auto frame = converter.get_destination_frame_buffer();
   uint8_t* dst_ptr = static_cast<uint8_t*>(frame->get()) + converter.get_frame_position();
 
-  cudaMemcpyKind copy_kind = (frame->get_memory_location() == MemoryLocation::Host)
-                                 ? cudaMemcpyDeviceToHost
-                                 : cudaMemcpyDeviceToDevice;
+  HOLOSCAN_LOG_TRACE("ContiguousStrategy: Executing copy with kind={} (src={}, dst={})",
+                     static_cast<int>(copy_kind_),
+                     static_cast<int>(src_memory_location_),
+                     static_cast<int>(frame->get_memory_location()));
 
   CUDA_TRY(
-      cudaMemcpy(dst_ptr, current_payload_start_ptr_, accumulated_contiguous_size_, copy_kind));
+      cudaMemcpy(dst_ptr, current_payload_start_ptr_, accumulated_contiguous_size_, copy_kind_));
 
   // Advance frame position by the amount we just copied
   converter.advance_frame_position(accumulated_contiguous_size_);
@@ -135,24 +165,25 @@ void StridedStrategy::execute_accumulated_strided_copy(PacketsToFramesConverter&
   auto frame = converter.get_destination_frame_buffer();
   uint8_t* dst_ptr = static_cast<uint8_t*>(frame->get()) + converter.get_frame_position();
 
-  cudaMemcpyKind copy_kind = (frame->get_memory_location() == MemoryLocation::Host)
-                                 ? cudaMemcpyDeviceToHost
-                                 : cudaMemcpyDeviceToDevice;
-
   // Use cudaMemcpy2D for strided copy
   size_t width = stride_info_.payload_size;  // Width of each row (payload size)
   size_t height = packet_count_;             // Number of rows (packets)
   size_t src_pitch = actual_stride_;         // Actual detected stride
   size_t dst_pitch = width;                  // Destination pitch (contiguous)
 
-  HOLOSCAN_LOG_TRACE("Executing strided copy: width={}, height={}, src_pitch={}, dst_pitch={}",
-                     width,
-                     height,
-                     src_pitch,
-                     dst_pitch);
+  HOLOSCAN_LOG_TRACE(
+      "Executing strided copy: width={}, height={}, src_pitch={}, dst_pitch={}, kind={} (src={}, "
+      "dst={})",
+      width,
+      height,
+      src_pitch,
+      dst_pitch,
+      static_cast<int>(copy_kind_),
+      static_cast<int>(src_memory_location_),
+      static_cast<int>(frame->get_memory_location()));
 
   CUDA_TRY(
-      cudaMemcpy2D(dst_ptr, dst_pitch, first_packet_ptr_, src_pitch, width, height, copy_kind));
+      cudaMemcpy2D(dst_ptr, dst_pitch, first_packet_ptr_, src_pitch, width, height, copy_kind_));
 
   converter.advance_frame_position(total_data_size_);
 }
@@ -162,13 +193,13 @@ void StridedStrategy::execute_individual_copy(PacketsToFramesConverter& converte
   auto frame = converter.get_destination_frame_buffer();
   uint8_t* dst_ptr = static_cast<uint8_t*>(frame->get()) + converter.get_frame_position();
 
-  cudaMemcpyKind copy_kind = (frame->get_memory_location() == MemoryLocation::Host)
-                                 ? cudaMemcpyDeviceToHost
-                                 : cudaMemcpyDeviceToDevice;
+  HOLOSCAN_LOG_TRACE("Executing individual copy: size={}, kind={} (src={}, dst={})",
+                     payload_size,
+                     static_cast<int>(copy_kind_),
+                     static_cast<int>(src_memory_location_),
+                     static_cast<int>(frame->get_memory_location()));
 
-  HOLOSCAN_LOG_TRACE("Executing individual copy: size={}", payload_size);
-
-  CUDA_TRY(cudaMemcpy(dst_ptr, payload_ptr, payload_size, copy_kind));
+  CUDA_TRY(cudaMemcpy(dst_ptr, payload_ptr, payload_size, copy_kind_));
 
   converter.advance_frame_position(payload_size);
 }
@@ -242,7 +273,7 @@ void StridedStrategy::reset_accumulation_state(uint8_t* payload, size_t payload_
   actual_stride_ = 0;
 }
 
-void PacketCopyStrategyDetector::initialize_with_burst_info(size_t header_stride_size,
+void PacketCopyStrategyDetector::configure_burst_parameters(size_t header_stride_size,
                                                             size_t payload_stride_size,
                                                             bool hds_on) {
   if (!strategy_confirmed_) {
@@ -499,15 +530,45 @@ std::unique_ptr<PacketsToFramesConverter> PacketsToFramesConverter::create(
   return std::make_unique<PacketsToFramesConverter>(shared_provider);
 }
 
-void PacketsToFramesConverter::initialize_with_burst_info(size_t header_stride_size,
+void PacketsToFramesConverter::configure_burst_parameters(size_t header_stride_size,
                                                           size_t payload_stride_size, bool hds_on) {
-  detector_.initialize_with_burst_info(header_stride_size, payload_stride_size, hds_on);
+  detector_.configure_burst_parameters(header_stride_size, payload_stride_size, hds_on);
+}
+
+void PacketsToFramesConverter::set_source_memory_location(bool payload_on_cpu) {
+  source_memory_location_ = payload_on_cpu ? nvidia::gxf::MemoryStorageType::kHost
+                                           : nvidia::gxf::MemoryStorageType::kDevice;
+
+  // Update current strategy if it exists
+  if (current_strategy_) {
+    auto dst_location = MemoryCopyHelper::to_storage_type(frame_->get_memory_location());
+    current_strategy_->set_memory_locations(source_memory_location_, dst_location);
+  }
+
+  HOLOSCAN_LOG_INFO(
+      "Source memory location set to: {} (payload_on_cpu={})",
+      source_memory_location_ == nvidia::gxf::MemoryStorageType::kHost ? "HOST" : "DEVICE",
+      payload_on_cpu);
+}
+
+void PacketsToFramesConverter::set_source_memory_location(
+    nvidia::gxf::MemoryStorageType src_storage_type) {
+  source_memory_location_ = src_storage_type;
+
+  // Update current strategy if it exists
+  if (current_strategy_) {
+    auto dst_location = MemoryCopyHelper::to_storage_type(frame_->get_memory_location());
+    current_strategy_->set_memory_locations(source_memory_location_, dst_location);
+  }
+
+  HOLOSCAN_LOG_INFO(
+      "Source memory location set to: {}",
+      source_memory_location_ == nvidia::gxf::MemoryStorageType::kHost ? "HOST" : "DEVICE");
 }
 
 void PacketsToFramesConverter::process_incoming_packet(const RtpParams& rtp_params,
                                                        uint8_t* payload) {
   if (waiting_for_end_of_frame_) {
-    // Check marker bit directly from parsed parameters
     if (rtp_params.m_bit) {
       HOLOSCAN_LOG_INFO("End of frame received, restarting");
       waiting_for_end_of_frame_ = false;
@@ -516,97 +577,29 @@ void PacketsToFramesConverter::process_incoming_packet(const RtpParams& rtp_para
     return;
   }
 
-  // Use payload size directly from parsed parameters
-  size_t payload_size = rtp_params.payload_size;
-
-  HOLOSCAN_LOG_TRACE("Processing packet: seq={}, payload_size={}, m_bit={}",
-                     rtp_params.sequence_number,
-                     payload_size,
-                     rtp_params.m_bit);
-
-  // Strategy detection phase
-  if (!detector_.is_strategy_confirmed() && !current_strategy_) {
-    bool ready_for_detection = detector_.collect_packet_info(rtp_params, payload, payload_size);
-    if (ready_for_detection) {
-      auto strategy = detector_.detect_strategy();
-      if (strategy) {
-        current_strategy_ = std::move(strategy);
-        HOLOSCAN_LOG_INFO("Strategy detection successful: {}",
-                          current_strategy_->get_strategy_type() == CopyStrategy::CONTIGUOUS
-                              ? "CONTIGUOUS"
-                              : "STRIDED");
-      } else {
-        // Detection failed, reset and try again with next packets
-        HOLOSCAN_LOG_INFO("Strategy detection failed, will retry with next packets");
-      }
-    }
-
-    // If we're still collecting packets for detection, skip packet processing
-    if (!current_strategy_) {
-      HOLOSCAN_LOG_INFO(
-          "Still collecting packets for strategy detection, skipping packet processing");
-      return;
-    }
-  }
-
-  // Process packet based on confirmed strategy (fallback to contiguous if detection is complete but
-  // failed)
+  // Strategy detection phase (only during initialization)
   if (!current_strategy_) {
-    current_strategy_ = std::make_unique<ContiguousStrategy>();
-    HOLOSCAN_LOG_INFO("Using fallback CONTIGUOUS strategy");
+    if (!handle_strategy_detection(rtp_params, payload, rtp_params.payload_size)) {
+      return;  // Still detecting, skip processing
+    }
+    ensure_strategy_available();
   }
 
-  current_strategy_->process_packet(*this, payload, payload_size);
+  // Main data path - process packet
+  current_strategy_->process_packet(*this, payload, rtp_params.payload_size);
 
-  // Handle end of frame marker FIRST - execute any accumulated data before validation
+  // Handle end of frame marker
   if (rtp_params.m_bit) {
-    HOLOSCAN_LOG_TRACE("End of frame marker received, executing final copy");
-    // Execute any remaining accumulated data
-    current_strategy_->execute_copy(*this);
-
-    // Now validate if frame is complete after copying
-    int64_t bytes_left_after_copy = frame_->get_size() - current_byte_in_frame_;
-    if (bytes_left_after_copy > 0) {
-      HOLOSCAN_LOG_WARN("Frame incomplete after marker: {} bytes missing", bytes_left_after_copy);
-    }
-
-    frame_provider_->on_new_frame(frame_);
-    frame_ = frame_provider_->get_allocated_frame();
-    reset_frame_state();
+    handle_end_of_frame();
     return;
   }
 
+  // Validate packet integrity (only for non-marker packets)
   const auto& [is_corrupted, error] = validate_packet_integrity(rtp_params);
   if (is_corrupted) {
     HOLOSCAN_LOG_ERROR("Frame is corrupted: {}", error);
-    if (!rtp_params.m_bit) {
-      waiting_for_end_of_frame_ = true;
-    } else {
-      HOLOSCAN_LOG_INFO("End of frame received, restarting");
-      reset_frame_state();
-    }
-    return;
-  }
-
-  // Calculate remaining bytes based on strategy
-  int64_t bytes_left_after_copy = frame_->get_size() - current_byte_in_frame_;
-  if (current_strategy_->get_strategy_type() == CopyStrategy::STRIDED) {
-    // For strided, we need to account for the accumulated data size
-    auto* strided_strategy = static_cast<StridedStrategy*>(current_strategy_.get());
-    // Note: In a real implementation, we'd need access to strided strategy's internal state
-    // For now, we'll estimate based on current frame position
-  }
-
-  bool frame_full = bytes_left_after_copy <= 0;
-
-  if (frame_full && rtp_params.m_bit) {
-    HOLOSCAN_LOG_TRACE("Frame is full, executing final copy");
-    // Execute any remaining accumulated data
-    current_strategy_->execute_copy(*this);
-    frame_provider_->on_new_frame(frame_);
-    frame_ = frame_provider_->get_allocated_frame();
-    reset_frame_state();
-    return;
+    waiting_for_end_of_frame_ = !rtp_params.m_bit;
+    if (rtp_params.m_bit) { reset_frame_state(); }
   }
 }
 
@@ -641,15 +634,13 @@ bool PacketsToFramesConverter::has_pending_copy() const {
 
 std::pair<bool, std::string> PacketsToFramesConverter::validate_packet_integrity(
     const RtpParams& rtp_params) {
-  // For simplicity, we'll use a basic frame size check
-  // In the original implementation, this would need to account for strategy-specific calculations
-  int64_t bytes_left_after_copy = frame_->get_size() - current_byte_in_frame_;
+  int64_t bytes_left = frame_->get_size() - current_byte_in_frame_;
 
-  bool frame_full = bytes_left_after_copy <= 0;
-  if (bytes_left_after_copy < 0) {
+  if (bytes_left < 0) {
     return {true, "Frame received is not aligned to the frame size and will be dropped"};
   }
 
+  bool frame_full = bytes_left <= 0;
   if (frame_full && !rtp_params.m_bit) {
     return {true, "Frame is full but marker was not not appear"};
   }
@@ -662,13 +653,74 @@ std::pair<bool, std::string> PacketsToFramesConverter::validate_packet_integrity
         "sequence_number={}",
         current_byte_in_frame_,
         frame_->get_size(),
-        bytes_left_after_copy,
+        bytes_left,
         rtp_params.payload_size,
         rtp_params.sequence_number);
     return {true, "Marker appeared but frame is not full"};
   }
 
   return {false, ""};
+}
+
+bool PacketsToFramesConverter::handle_strategy_detection(const RtpParams& rtp_params,
+                                                         uint8_t* payload, size_t payload_size) {
+  if (detector_.is_strategy_confirmed()) {
+    return true;  // Strategy already confirmed
+  }
+
+  HOLOSCAN_LOG_TRACE("Processing packet for detection: seq={}, payload_size={}, m_bit={}",
+                     rtp_params.sequence_number,
+                     payload_size,
+                     rtp_params.m_bit);
+
+  bool ready_for_detection = detector_.collect_packet_info(rtp_params, payload, payload_size);
+  if (ready_for_detection) {
+    auto strategy = detector_.detect_strategy();
+    if (strategy) {
+      current_strategy_ = std::move(strategy);
+      auto dst_location = MemoryCopyHelper::to_storage_type(frame_->get_memory_location());
+      current_strategy_->set_memory_locations(source_memory_location_, dst_location);
+      HOLOSCAN_LOG_INFO("Strategy detection successful: {}",
+                        current_strategy_->get_strategy_type() == CopyStrategy::CONTIGUOUS
+                            ? "CONTIGUOUS"
+                            : "STRIDED");
+      return true;  // Strategy ready
+    } else {
+      HOLOSCAN_LOG_INFO("Strategy detection failed, will retry with next packets");
+    }
+  } else {
+    HOLOSCAN_LOG_INFO(
+        "Still collecting packets for strategy detection, skipping packet processing");
+  }
+
+  return false;  // Still detecting
+}
+
+void PacketsToFramesConverter::ensure_strategy_available() {
+  if (!current_strategy_) {
+    current_strategy_ = std::make_unique<ContiguousStrategy>();
+    auto dst_location = MemoryCopyHelper::to_storage_type(frame_->get_memory_location());
+    current_strategy_->set_memory_locations(source_memory_location_, dst_location);
+    HOLOSCAN_LOG_INFO("Using fallback CONTIGUOUS strategy");
+  }
+}
+
+void PacketsToFramesConverter::handle_end_of_frame() {
+  HOLOSCAN_LOG_TRACE("End of frame marker received, executing final copy");
+
+  // Execute any remaining accumulated data
+  current_strategy_->execute_copy(*this);
+
+  // Validate frame completion
+  int64_t bytes_left = frame_->get_size() - current_byte_in_frame_;
+  if (bytes_left > 0) {
+    HOLOSCAN_LOG_WARN("Frame incomplete after marker: {} bytes missing", bytes_left);
+  }
+
+  // Complete frame and get new one
+  frame_provider_->on_new_frame(frame_);
+  frame_ = frame_provider_->get_allocated_frame();
+  reset_frame_state();
 }
 
 }  // namespace holoscan::ops

@@ -90,14 +90,14 @@ class AdvNetworkMediaOpRxImpl : public IFrameProvider {
       HOLOSCAN_LOG_INFO("Using VideoBuffer output format");
     }
 
-    // Determine memory location type
+    // Determine memory location type for output frames
     const auto& memory_location_str = parent_.memory_location_.get();
     if (memory_location_str == "host") {
       storage_type_ = nvidia::gxf::MemoryStorageType::kHost;
-      HOLOSCAN_LOG_INFO("Using Host memory location");
+      HOLOSCAN_LOG_INFO("Using Host memory location for output frames");
     } else {
       storage_type_ = nvidia::gxf::MemoryStorageType::kDevice;
-      HOLOSCAN_LOG_INFO("Using Device memory location");
+      HOLOSCAN_LOG_INFO("Using Device memory location for output frames");
     }
 
     // Create pool of allocated frame buffers
@@ -352,8 +352,8 @@ void AdvNetworkMediaOpRx::setup(OperatorSpec& spec) {
              std::string("video_buffer"));
   spec.param(memory_location_,
              "memory_location",
-             "Memory Location",
-             "Memory location for frame buffers ('host' or 'devices')",
+             "Memory Location for Output Frames",
+             "Memory location for output frames ('host' or 'devices')",
              std::string("device"));
 }
 

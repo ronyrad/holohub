@@ -34,7 +34,7 @@ namespace holoscan::ops {
  *
  * Responsibilities:
  * - Parse burst configuration from AnoBurstExtendedInfo
- * - Initialize PacketsToFramesConverter with burst parameters
+ * - Configure PacketsToFramesConverter with burst parameters
  * - Extract RTP headers and payloads from burst packets
  * - Handle Header Data Split (HDS) configuration
  * - Detect and handle burst configuration changes
@@ -62,7 +62,7 @@ class BurstProcessor {
 
  private:
   /**
-   * @brief Ensure converter has proper configuration (initialize once, validate on subsequent calls)
+   * @brief Ensure converter has proper configuration (configure once, validate on subsequent calls)
    * @param burst The burst containing configuration information
    */
   void ensure_converter_configuration(BurstParams* burst);

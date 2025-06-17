@@ -37,6 +37,28 @@ enum class CopyStrategy {
 };
 
 /**
+ * @brief Memory copy configuration helper
+ */
+class MemoryCopyHelper {
+ public:
+  /**
+   * @brief Determine appropriate cudaMemcpyKind based on source and destination memory locations
+   * @param src_storage_type Source memory storage type
+   * @param dst_storage_type Destination memory storage type
+   * @return Appropriate cudaMemcpyKind for the operation
+   */
+  static cudaMemcpyKind get_copy_kind(nvidia::gxf::MemoryStorageType src_storage_type,
+                                      nvidia::gxf::MemoryStorageType dst_storage_type);
+
+  /**
+   * @brief Convert MemoryLocation to MemoryStorageType
+   * @param location Memory location to convert
+   * @return Corresponding MemoryStorageType
+   */
+  static nvidia::gxf::MemoryStorageType to_storage_type(MemoryLocation location);
+};
+
+/**
  * @brief Information about detected stride pattern
  */
 struct StrideInfo {
@@ -107,6 +129,14 @@ class IPacketCopyStrategy {
    * @return True if there's pending copy data, false otherwise
    */
   virtual bool has_pending_copy() const = 0;
+
+  /**
+   * @brief Set source memory location for packet data and cache copy kind
+   * @param src_location Source memory storage type
+   * @param dst_location Destination memory storage type
+   */
+  virtual void set_memory_locations(nvidia::gxf::MemoryStorageType src_location,
+                                    nvidia::gxf::MemoryStorageType dst_location) = 0;
 };
 
 /**
@@ -121,10 +151,17 @@ class ContiguousStrategy : public IPacketCopyStrategy {
   void reset_state() override;
   CopyStrategy get_strategy_type() const override { return CopyStrategy::CONTIGUOUS; }
   bool has_pending_copy() const override { return accumulated_contiguous_size_ > 0; }
+  void set_memory_locations(nvidia::gxf::MemoryStorageType src_location,
+                            nvidia::gxf::MemoryStorageType dst_location) override {
+    src_memory_location_ = src_location;
+    copy_kind_ = MemoryCopyHelper::get_copy_kind(src_location, dst_location);
+  }
 
  private:
   size_t accumulated_contiguous_size_ = 0;
   uint8_t* current_payload_start_ptr_ = nullptr;
+  nvidia::gxf::MemoryStorageType src_memory_location_ = nvidia::gxf::MemoryStorageType::kDevice;
+  cudaMemcpyKind copy_kind_ = cudaMemcpyDeviceToDevice;
 };
 
 /**
@@ -141,6 +178,11 @@ class StridedStrategy : public IPacketCopyStrategy {
   void reset_state() override;
   CopyStrategy get_strategy_type() const override { return CopyStrategy::STRIDED; }
   bool has_pending_copy() const override { return packet_count_ > 0; }
+  void set_memory_locations(nvidia::gxf::MemoryStorageType src_location,
+                            nvidia::gxf::MemoryStorageType dst_location) override {
+    src_memory_location_ = src_location;
+    copy_kind_ = MemoryCopyHelper::get_copy_kind(src_location, dst_location);
+  }
 
  private:
   /**
@@ -194,6 +236,9 @@ class StridedStrategy : public IPacketCopyStrategy {
   bool stride_validated_ = false;
   size_t actual_stride_ = 0;
 
+  nvidia::gxf::MemoryStorageType src_memory_location_ = nvidia::gxf::MemoryStorageType::kDevice;
+  cudaMemcpyKind copy_kind_ = cudaMemcpyDeviceToDevice;
+
   // Buffer wrap-around detection threshold (1MB)
   static constexpr size_t WRAPAROUND_THRESHOLD = 1024 * 1024;
 };
@@ -206,12 +251,12 @@ class PacketCopyStrategyDetector {
   static constexpr size_t STRATEGY_DETECTION_PACKETS = 4;  // Number of packets to analyze
 
   /**
-   * @brief Initialize detector with burst configuration
+   * @brief Configure detector with burst configuration parameters
    * @param header_stride_size Header stride size from burst info
    * @param payload_stride_size Payload stride size from burst info
    * @param hds_on Whether header data splitting is enabled
    */
-  void initialize_with_burst_info(size_t header_stride_size, size_t payload_stride_size,
+  void configure_burst_parameters(size_t header_stride_size, size_t payload_stride_size,
                                   bool hds_on);
 
   /**
@@ -306,14 +351,26 @@ class PacketsToFramesConverter {
   void process_incoming_packet(const RtpParams& rtp_params, uint8_t* payload);
 
   /**
-   * @brief Initialize with burst stride information (only affects detection if not already
+   * @brief Configure with burst stride information (only affects detection if not already
    * confirmed)
    * @param header_stride_size Header stride size from burst info
    * @param payload_stride_size Payload stride size from burst info
    * @param hds_on Whether header data splitting is enabled
    */
-  void initialize_with_burst_info(size_t header_stride_size, size_t payload_stride_size,
+  void configure_burst_parameters(size_t header_stride_size, size_t payload_stride_size,
                                   bool hds_on);
+
+  /**
+   * @brief Set source memory location for packet data
+   * @param payload_on_cpu Whether payload data is on CPU (true) or GPU (false)
+   */
+  void set_source_memory_location(bool payload_on_cpu);
+
+  /**
+   * @brief Set source memory location for packet data using storage type
+   * @param src_storage_type Source memory storage type
+   */
+  void set_source_memory_location(nvidia::gxf::MemoryStorageType src_storage_type);
 
   /**
    * @brief Reset converter state for new frame sequence
@@ -367,6 +424,26 @@ class PacketsToFramesConverter {
    */
   std::pair<bool, std::string> validate_packet_integrity(const RtpParams& rtp_params);
 
+  /**
+   * @brief Handle strategy detection phase for incoming packet
+   * @param rtp_params Parsed RTP parameters from header
+   * @param payload Payload data pointer
+   * @param payload_size Size of payload data
+   * @return True if packet should be processed, false if still detecting
+   */
+  bool handle_strategy_detection(const RtpParams& rtp_params, uint8_t* payload,
+                                 size_t payload_size);
+
+  /**
+   * @brief Ensure strategy is available (create fallback if needed)
+   */
+  void ensure_strategy_available();
+
+  /**
+   * @brief Handle end of frame processing
+   */
+  void handle_end_of_frame();
+
  private:
   std::shared_ptr<IFrameProvider> frame_provider_;
   std::shared_ptr<FrameBufferBase> frame_;
@@ -378,6 +455,8 @@ class PacketsToFramesConverter {
   // Strategy components
   PacketCopyStrategyDetector detector_;
   std::unique_ptr<IPacketCopyStrategy> current_strategy_;
+
+  nvidia::gxf::MemoryStorageType source_memory_location_ = nvidia::gxf::MemoryStorageType::kDevice;
 };
 
 }  // namespace holoscan::ops
