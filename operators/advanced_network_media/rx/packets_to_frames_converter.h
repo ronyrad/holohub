@@ -15,8 +15,8 @@
  * limitations under the License.
  */
 
-#ifndef PACKETS_TO_FRAMES_CONVERTER_H_
-#define PACKETS_TO_FRAMES_CONVERTER_H_
+#ifndef OPERATORS_ADVANCED_NETWORK_MEDIA_RX_PACKETS_TO_FRAMES_CONVERTER_H_
+#define OPERATORS_ADVANCED_NETWORK_MEDIA_RX_PACKETS_TO_FRAMES_CONVERTER_H_
 
 #include <cuda_runtime.h>
 #include <memory>
@@ -382,4 +382,4 @@ class PacketsToFramesConverter {
 
 }  // namespace holoscan::ops
 
-#endif  // PACKETS_TO_FRAMES_CONVERTER_H_
+#endif  // OPERATORS_ADVANCED_NETWORK_MEDIA_RX_PACKETS_TO_FRAMES_CONVERTER_H_

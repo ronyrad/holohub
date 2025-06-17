@@ -15,8 +15,8 @@
  * limitations under the License.
  */
 
-#ifndef ADV_NETWORK_MEDIA_RX_H
-#define ADV_NETWORK_MEDIA_RX_H
+#ifndef OPERATORS_ADVANCED_NETWORK_MEDIA_RX_ADV_NETWORK_MEDIA_RX_H_
+#define OPERATORS_ADVANCED_NETWORK_MEDIA_RX_ADV_NETWORK_MEDIA_RX_H_
 
 #include <holoscan/holoscan.hpp>
 
@@ -73,4 +73,4 @@ class AdvNetworkMediaOpRx : public Operator {
 
 }  // namespace holoscan::ops
 
-#endif  // ADV_NETWORK_MEDIA_RX_H
+#endif  // OPERATORS_ADVANCED_NETWORK_MEDIA_RX_ADV_NETWORK_MEDIA_RX_H_

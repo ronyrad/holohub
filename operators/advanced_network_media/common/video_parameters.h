@@ -15,8 +15,8 @@
  * limitations under the License.
  */
 
-#ifndef VIDEO_PARAMETERS_H
-#define VIDEO_PARAMETERS_H
+#ifndef OPERATORS_ADVANCED_NETWORK_MEDIA_COMMON_VIDEO_PARAMETERS_H_
+#define OPERATORS_ADVANCED_NETWORK_MEDIA_COMMON_VIDEO_PARAMETERS_H_
 
 #include <string>
 #include <unordered_map>
@@ -101,4 +101,4 @@ uint32_t get_channel_count_for_format(nvidia::gxf::VideoFormat format);
 
 }  // namespace holoscan::ops
 
-#endif  // VIDEO_PARAMETERS_H
+#endif  // OPERATORS_ADVANCED_NETWORK_MEDIA_COMMON_VIDEO_PARAMETERS_H_

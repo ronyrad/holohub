@@ -15,7 +15,9 @@
  * limitations under the License.
  */
 
-#pragma once
+#ifndef OPERATORS_ADVANCED_NETWORK_MEDIA_COMMON_ADV_NETWORK_MEDIA_COMMON_H_
+#define OPERATORS_ADVANCED_NETWORK_MEDIA_COMMON_ADV_NETWORK_MEDIA_COMMON_H_
+
 #include <cstdint>
 #include <stddef.h>
 #include <holoscan/holoscan.hpp>
@@ -33,4 +35,6 @@
                          static_cast<int>(_holoscan_cuda_err));                                 \
     }                                                                                           \
     _holoscan_cuda_err;                                                                         \
-  }) 
+  })
+
+#endif  // OPERATORS_ADVANCED_NETWORK_MEDIA_COMMON_ADV_NETWORK_MEDIA_COMMON_H_

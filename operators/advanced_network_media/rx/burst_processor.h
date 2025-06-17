@@ -15,8 +15,8 @@
  * limitations under the License.
  */
 
-#ifndef BURST_PROCESSOR_H_
-#define BURST_PROCESSOR_H_
+#ifndef OPERATORS_ADVANCED_NETWORK_MEDIA_RX_BURST_PROCESSOR_H_
+#define OPERATORS_ADVANCED_NETWORK_MEDIA_RX_BURST_PROCESSOR_H_
 
 #include <memory>
 #include "advanced_network/common.h"
@@ -80,4 +80,4 @@ class BurstProcessor {
 
 }  // namespace holoscan::ops
 
-#endif  // BURST_PROCESSOR_H_
+#endif  // OPERATORS_ADVANCED_NETWORK_MEDIA_RX_BURST_PROCESSOR_H_

@@ -14,8 +14,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef FRAME_BUFFER_H
-#define FRAME_BUFFER_H
+#ifndef OPERATORS_ADVANCED_NETWORK_MEDIA_COMMON_FRAME_BUFFER_H_
+#define OPERATORS_ADVANCED_NETWORK_MEDIA_COMMON_FRAME_BUFFER_H_
 
 #include <memory>
 #include <functional>
@@ -248,4 +248,4 @@ class AllocatedTensorFrameBuffer : public VideoFrameBufferBase {
 
 }  // namespace holoscan::ops
 
-#endif  // FRAME_BUFFER_H
+#endif  // OPERATORS_ADVANCED_NETWORK_MEDIA_COMMON_FRAME_BUFFER_H_

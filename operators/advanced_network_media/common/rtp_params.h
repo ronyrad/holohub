@@ -15,7 +15,9 @@
  * limitations under the License.
  */
 
-#pragma once
+#ifndef OPERATORS_ADVANCED_NETWORK_MEDIA_COMMON_RTP_PARAMS_H_
+#define OPERATORS_ADVANCED_NETWORK_MEDIA_COMMON_RTP_PARAMS_H_
+
 #include <cstdint>
 #include <arpa/inet.h>
 #include "rdk/services/services.h"
@@ -74,3 +76,4 @@ struct RtpParams {
 inline bool parse_rtp_header(const uint8_t* rtp_hdr, RtpParams& params) {
   return params.parse(rtp_hdr);
 }
+#endif  // OPERATORS_ADVANCED_NETWORK_MEDIA_COMMON_RTP_PARAMS_H_
