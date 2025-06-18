@@ -15,8 +15,8 @@
  * limitations under the License.
  */
 
-#include "../adv_network_media_rx.h"
-#include "./adv_network_media_rx_pydoc.hpp"
+#include "../adv_network_media_tx.h"
+#include "./adv_network_media_tx_pydoc.hpp"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>  // for unordered_map -> dict, etc.
@@ -30,10 +30,6 @@
 #include <holoscan/core/gxf/gxf_operator.hpp>
 #include <holoscan/core/operator_spec.hpp>
 #include <holoscan/core/resources/gxf/allocator.hpp>
-
-// Add advanced network headers
-#include "advanced_network/common.h"
-#include "advanced_network/types.h"
 
 using std::string_literals::operator""s;
 using pybind11::literals::operator""_a;
@@ -55,57 +51,43 @@ namespace holoscan::ops {
  * The sequence of events in this constructor is based on Fragment::make_operator<OperatorT>
  */
 
-class PyAdvNetworkMediaOpRx : public AdvNetworkMediaOpRx {
+class PyAdvNetworkMediaOpTx : public AdvNetworkMediaOpTx {
  public:
   /* Inherit the constructors */
-  using AdvNetworkMediaOpRx::AdvNetworkMediaOpRx;
+  using AdvNetworkMediaOpTx::AdvNetworkMediaOpTx;
 
   // Define a constructor that fully initializes the object.
-  PyAdvNetworkMediaOpRx(Fragment* fragment, const py::args& args,
+  PyAdvNetworkMediaOpTx(Fragment* fragment, const py::args& args,
                         const std::string& interface_name = "",
-                        uint16_t queue_id = default_queue_id, uint32_t frame_width = 1920,
-                        uint32_t frame_height = 1080, uint32_t bit_depth = 8,
-                        const std::string& video_format = "RGB888", bool hds = true,
-                        const std::string& output_format = "video_buffer",
-                        const std::string& memory_location = "device",
-                        const std::string& name = "advanced_network_media_rx") {
+                        uint16_t queue_id = default_queue_id,
+                        const std::string& video_format = "RGB888",
+                        uint32_t bit_depth = 8, uint32_t frame_width = 1920,
+                        uint32_t frame_height = 1080,
+                        const std::string& name = "advanced_network_media_tx") {
     add_positional_condition_and_resource_args(this, args);
     name_ = name;
     fragment_ = fragment;
     spec_ = std::make_shared<OperatorSpec>(fragment);
     setup(*spec_.get());
 
-    // Use fragment->from_config to get configurations like the C++ version
-    try {
-      // Initialize advanced network if not already done
-      auto adv_net_config = fragment->from_config("advanced_network")
-                                .template as<holoscan::advanced_network::NetworkConfig>();
-      holoscan::advanced_network::adv_net_init(adv_net_config);
-    } catch (const std::exception& e) {
-      // Advanced network might already be initialized, ignore errors
-    }
-
     // Set parameters if provided
     if (!interface_name.empty()) { this->add_arg(Arg("interface_name", interface_name)); }
     this->add_arg(Arg("queue_id", queue_id));
+    this->add_arg(Arg("video_format", video_format));
+    this->add_arg(Arg("bit_depth", bit_depth));
     this->add_arg(Arg("frame_width", frame_width));
     this->add_arg(Arg("frame_height", frame_height));
-    this->add_arg(Arg("bit_depth", bit_depth));
-    this->add_arg(Arg("video_format", video_format));
-    this->add_arg(Arg("hds", hds));
-    this->add_arg(Arg("output_format", output_format));
-    this->add_arg(Arg("memory_location", memory_location));
   }
 };
 
-PYBIND11_MODULE(_advanced_network_media_rx, m) {
+PYBIND11_MODULE(_advanced_network_media_tx, m) {
   m.doc() = R"pbdoc(
-        Holoscan SDK Advanced Networking Media RX Operator Python Bindings
+        Holoscan SDK Advanced Networking Media TX Operator Python Bindings
         ------------------------------------------------------------------
-        .. currentmodule:: _advanced_network_media_rx
+        .. currentmodule:: _advanced_network_media_tx
         
-        This module provides Python bindings for the Advanced Networking Media RX operator,
-        which receives video frames over Rivermax-enabled network infrastructure.
+        This module provides Python bindings for the Advanced Networking Media TX operator,
+        which transmits video frames over Rivermax-enabled network infrastructure.
     )pbdoc";
 
 #ifdef VERSION_INFO
@@ -114,36 +96,30 @@ PYBIND11_MODULE(_advanced_network_media_rx, m) {
   m.attr("__version__") = "dev";
 #endif
 
-  py::class_<AdvNetworkMediaOpRx,
-             PyAdvNetworkMediaOpRx,
+  py::class_<AdvNetworkMediaOpTx,
+             PyAdvNetworkMediaOpTx,
              Operator,
-             std::shared_ptr<AdvNetworkMediaOpRx>>(
-      m, "AdvNetworkMediaOpRx", doc::AdvNetworkMediaOpRx::doc_AdvNetworkMediaOpRx)
+             std::shared_ptr<AdvNetworkMediaOpTx>>(
+      m, "AdvNetworkMediaOpTx", doc::AdvNetworkMediaOpTx::doc_AdvNetworkMediaOpTx)
       .def(py::init<Fragment*,
                     const py::args&,
                     const std::string&,
                     uint16_t,
+                    const std::string&,
                     uint32_t,
                     uint32_t,
                     uint32_t,
-                    const std::string&,
-                    bool,
-                    const std::string&,
-                    const std::string&,
                     const std::string&>(),
            "fragment"_a,
            "interface_name"_a = ""s,
-           "queue_id"_a = AdvNetworkMediaOpRx::default_queue_id,
+           "queue_id"_a = AdvNetworkMediaOpTx::default_queue_id,
+           "video_format"_a = "RGB888"s,
+           "bit_depth"_a = 8,
            "frame_width"_a = 1920,
            "frame_height"_a = 1080,
-           "bit_depth"_a = 8,
-           "video_format"_a = "RGB888"s,
-           "hds"_a = true,
-           "output_format"_a = "video_buffer"s,
-           "memory_location"_a = "device"s,
-           "name"_a = "advanced_network_media_rx"s,
-           doc::AdvNetworkMediaOpRx::doc_AdvNetworkMediaOpRx_python)
-      .def("initialize", &AdvNetworkMediaOpRx::initialize, doc::AdvNetworkMediaOpRx::doc_initialize)
-      .def("setup", &AdvNetworkMediaOpRx::setup, "spec"_a, doc::AdvNetworkMediaOpRx::doc_setup);
+           "name"_a = "advanced_network_media_tx"s,
+           doc::AdvNetworkMediaOpTx::doc_AdvNetworkMediaOpTx_python)
+      .def("initialize", &AdvNetworkMediaOpTx::initialize, doc::AdvNetworkMediaOpTx::doc_initialize)
+      .def("setup", &AdvNetworkMediaOpTx::setup, "spec"_a, doc::AdvNetworkMediaOpTx::doc_setup);
 }  // PYBIND11_MODULE NOLINT
 }  // namespace holoscan::ops

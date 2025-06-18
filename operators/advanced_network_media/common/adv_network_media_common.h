@@ -23,18 +23,18 @@
 #include <holoscan/holoscan.hpp>
 #include "rtp_params.h"
 
-#define CUDA_TRY(stmt)                                                                          \
-  ({                                                                                            \
-    cudaError_t _holoscan_cuda_err = stmt;                                                      \
-    if (cudaSuccess != _holoscan_cuda_err) {                                                    \
-      HOLOSCAN_LOG_ERROR("CUDA Runtime call %s in line %d of file %s failed with '%s' (%d).\n", \
-                         #stmt,                                                                 \
-                         __LINE__,                                                              \
-                         __FILE__,                                                              \
-                         cudaGetErrorString(_holoscan_cuda_err),                                \
-                         static_cast<int>(_holoscan_cuda_err));                                 \
-    }                                                                                           \
-    _holoscan_cuda_err;                                                                         \
-  })
+#define CUDA_TRY(stmt)                                                                  \
+  {                                                                                     \
+    cudaError_t cuda_status = stmt;                                                     \
+    if (cudaSuccess != cuda_status) {                                                   \
+      HOLOSCAN_LOG_ERROR("Runtime call {} in line {} of file {} failed with '{}' ({})", \
+                         #stmt,                                                         \
+                         __LINE__,                                                      \
+                         __FILE__,                                                      \
+                         cudaGetErrorString(cuda_status),                               \
+                         static_cast<int>(cuda_status));                                \
+      throw std::runtime_error("CUDA operation failed");                                \
+    }                                                                                   \
+  }
 
 #endif  // OPERATORS_ADVANCED_NETWORK_MEDIA_COMMON_ADV_NETWORK_MEDIA_COMMON_H_

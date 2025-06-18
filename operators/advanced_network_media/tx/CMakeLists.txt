@@ -35,6 +35,7 @@ target_link_libraries(${PROJECT_NAME}
     holoscan::core
     GXF::multimedia
     rivermax-dev-kit
+    advanced_network_common
     advanced_network_media_common
 )
 
@@ -50,3 +51,5 @@ install(
     EXPORT holoscan-networking-targets
     COMPONENT advanced_network-cpp
 )
+
+add_subdirectory(python)

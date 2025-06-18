@@ -15,8 +15,8 @@
  * limitations under the License.
  */
 
-#ifndef PYHOLOHUB_OPERATORS_ADV_NET_MEDIA_RX_PYDOC_HPP
-#define PYHOLOHUB_OPERATORS_ADV_NET_MEDIA_RX_PYDOC_HPP
+#ifndef PYHOLOHUB_OPERATORS_ADV_NET_MEDIA_TX_PYDOC_HPP
+#define PYHOLOHUB_OPERATORS_ADV_NET_MEDIA_TX_PYDOC_HPP
 
 #include <string>
 
@@ -24,46 +24,40 @@
 
 namespace holoscan::doc {
 
-namespace AdvNetworkMediaOpRx {
+namespace AdvNetworkMediaOpTx {
 
-PYDOC(AdvNetworkMediaOpRx, R"doc(
-Advanced Networking Media Receiver operator.
+PYDOC(AdvNetworkMediaOpTx, R"doc(
+Advanced Networking Media Transmitter operator.
 
-This operator receives video frames over Rivermax-enabled network infrastructure
-and outputs them as GXF VideoBuffer entities.
+This operator processes video frames from GXF entities (either VideoBuffer or Tensor)
+and transmits them over Rivermax-enabled network infrastructure.
 )doc")
 
-// PyAdvNetworkMediaOpRx Constructor
-PYDOC(AdvNetworkMediaOpRx_python, R"doc(
-Advanced Networking Media Receiver operator.
+// PyAdvNetworkMediaOpTx Constructor
+PYDOC(AdvNetworkMediaOpTx_python, R"doc(
+Advanced Networking Media Transmitter operator.
 
-This operator receives video frames over Rivermax-enabled network infrastructure
-and outputs them as GXF VideoBuffer entities.
+This operator processes video frames from GXF entities (either VideoBuffer or Tensor)
+and transmits them over Rivermax-enabled network infrastructure.
 
 Parameters
 ----------
 fragment : Fragment
     The fragment that the operator belongs to.
 interface_name : str, optional
-    Name of the network interface to use for reception.
+    Name of the network interface to use for transmission.
 queue_id : int, optional
     Queue ID for the network interface (default: 0).
+video_format : str, optional
+    Video format for transmission (default: "yuv422_rfc4175_be10").
+bit_depth : int, optional
+    Bit depth of the video data (default: 10).
 frame_width : int, optional
     Width of the video frame in pixels (default: 1920).
 frame_height : int, optional
     Height of the video frame in pixels (default: 1080).
-bit_depth : int, optional
-    Bit depth of the video data (default: 10).
-video_format : str, optional
-    Video format for reception (default: "yuv422_rfc4175_be10").
-hds : bool, optional
-    High Dynamic Range setting (default: False).
-output_format : str, optional
-    Output format for the frames (default: "yuv420").
-memory_location : str, optional
-    Memory location for frame storage (default: "host").
 name : str, optional
-    The name of the operator (default: "advanced_network_media_rx").
+    The name of the operator (default: "advanced_network_media_tx").
 )doc")
 
 PYDOC(gxf_typename, R"doc(
@@ -91,8 +85,8 @@ spec : ``holoscan.core.OperatorSpec``
     The operator specification.
 )doc")
 
-}  // namespace AdvNetworkMediaOpRx
+}  // namespace AdvNetworkMediaOpTx
 
 }  // namespace holoscan::doc
 
-#endif  // PYHOLOHUB_OPERATORS_ADV_NET_MEDIA_RX_PYDOC_HPP
+#endif  // PYHOLOHUB_OPERATORS_ADV_NET_MEDIA_TX_PYDOC_HPP
