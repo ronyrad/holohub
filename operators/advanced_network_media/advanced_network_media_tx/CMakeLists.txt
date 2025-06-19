@@ -52,4 +52,6 @@ install(
     COMPONENT advanced_network-cpp
 )
 
-add_subdirectory(python)
+if(HOLOHUB_BUILD_PYTHON)
+    add_subdirectory(python)
+endif()

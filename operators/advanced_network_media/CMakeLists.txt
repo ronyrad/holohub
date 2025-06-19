@@ -20,5 +20,6 @@ cmake_minimum_required(VERSION 3.20)
 add_subdirectory(common)
 
 # Build operator-specific code
-add_subdirectory(rx)
-add_subdirectory(tx)
+add_holohub_operator(advanced_network_media_rx)
+add_holohub_operator(advanced_network_media_tx)
+
