@@ -49,9 +49,9 @@ interface_name : str, optional
 queue_id : int, optional
     Queue ID for the network interface (default: 0).
 video_format : str, optional
-    Video format for transmission (default: "yuv422_rfc4175_be10").
+    Video format for transmission (default: "RGB888").
 bit_depth : int, optional
-    Bit depth of the video data (default: 10).
+    Bit depth of the video data (default: 8).
 frame_width : int, optional
     Width of the video frame in pixels (default: 1920).
 frame_height : int, optional

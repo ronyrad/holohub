@@ -60,9 +60,8 @@ class PyAdvNetworkMediaOpTx : public AdvNetworkMediaOpTx {
   PyAdvNetworkMediaOpTx(Fragment* fragment, const py::args& args,
                         const std::string& interface_name = "",
                         uint16_t queue_id = default_queue_id,
-                        const std::string& video_format = "RGB888",
-                        uint32_t bit_depth = 8, uint32_t frame_width = 1920,
-                        uint32_t frame_height = 1080,
+                        const std::string& video_format = "RGB888", uint32_t bit_depth = 8,
+                        uint32_t frame_width = 1920, uint32_t frame_height = 1080,
                         const std::string& name = "advanced_network_media_tx") {
     add_positional_condition_and_resource_args(this, args);
     name_ = name;

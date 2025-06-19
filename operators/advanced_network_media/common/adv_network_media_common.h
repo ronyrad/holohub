@@ -37,4 +37,15 @@
     }                                                                                   \
   }
 
+// Packet tracing debug flag - uncomment to enable extensive packet debugging
+// #define ENABLE_PACKET_TRACING
+
+#ifdef ENABLE_PACKET_TRACING
+#define PACKET_TRACE_LOG(fmt, ...) HOLOSCAN_LOG_INFO("[PACKET_TRACE] " fmt, ##__VA_ARGS__)
+#else
+#define PACKET_TRACE_LOG(fmt, ...) \
+  do {                             \
+  } while (0)
+#endif
+
 #endif  // OPERATORS_ADVANCED_NETWORK_MEDIA_COMMON_ADV_NETWORK_MEDIA_COMMON_H_

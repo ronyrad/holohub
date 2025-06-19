@@ -18,6 +18,7 @@
 #include <cuda_runtime.h>
 #include "advanced_network/common.h"
 #include "packets_to_frames_converter.h"
+#include "../common/adv_network_media_common.h"
 
 namespace holoscan::ops {
 
@@ -52,30 +53,55 @@ nvidia::gxf::MemoryStorageType MemoryCopyHelper::to_storage_type(MemoryLocation 
 
 void ContiguousStrategy::process_packet(PacketsToFramesConverter& converter, uint8_t* payload,
                                         size_t payload_size) {
+  // Validate input parameters to prevent crashes
+  if (payload == nullptr) {
+    HOLOSCAN_LOG_ERROR("ContiguousStrategy: Received null payload pointer! Skipping packet.");
+    return;
+  }
+  if (payload_size == 0) {
+    HOLOSCAN_LOG_ERROR("ContiguousStrategy: Received zero payload size! Skipping packet.");
+    return;
+  }
+
   if (current_payload_start_ptr_ == nullptr) {
     current_payload_start_ptr_ = payload;
-    HOLOSCAN_LOG_TRACE("ContiguousStrategy: Starting new accumulation at {}",
-                       static_cast<void*>(payload));
+    PACKET_TRACE_LOG("ContiguousStrategy: Starting new accumulation at {} (size={})",
+                     static_cast<void*>(payload),
+                     payload_size);
   }
 
   bool is_contiguous_memory = current_payload_start_ptr_ + accumulated_contiguous_size_ == payload;
   if (!is_contiguous_memory) {
-    HOLOSCAN_LOG_TRACE("ContiguousStrategy: Stride break detected, copying {} bytes",
-                       accumulated_contiguous_size_);
+    PACKET_TRACE_LOG("ContiguousStrategy: Stride break detected, copying {} bytes",
+                     accumulated_contiguous_size_);
     // Execute copy for previous accumulated batch (this will advance frame position)
     execute_copy(converter);
 
     // Start new accumulation batch with current packet
     current_payload_start_ptr_ = payload;
     accumulated_contiguous_size_ = 0;
-    HOLOSCAN_LOG_TRACE("ContiguousStrategy: Starting new accumulation at {}",
-                       static_cast<void*>(payload));
+  }
+
+  // CRITICAL FIX: Check if adding this packet would exceed frame boundaries
+  // This prevents accumulation across multiple frames
+  auto frame = converter.get_destination_frame_buffer();
+  size_t frame_remaining = frame->get_size() - converter.get_frame_position();
+  size_t new_total_size = accumulated_contiguous_size_ + payload_size;
+
+  if (new_total_size > frame_remaining && accumulated_contiguous_size_ > 0) {
+    PACKET_TRACE_LOG(
+        "ContiguousStrategy: Frame boundary detected, executing copy of {} bytes before adding new "
+        "packet",
+        accumulated_contiguous_size_);
+    // Execute copy for current accumulated data to avoid frame overflow
+    execute_copy(converter);
+
+    // Start new accumulation with current packet
+    current_payload_start_ptr_ = payload;
+    accumulated_contiguous_size_ = 0;
   }
 
   accumulated_contiguous_size_ += payload_size;
-  HOLOSCAN_LOG_TRACE("ContiguousStrategy: Accumulated {} bytes (total: {})",
-                     payload_size,
-                     accumulated_contiguous_size_);
 }
 
 void ContiguousStrategy::execute_copy(PacketsToFramesConverter& converter) {
@@ -84,10 +110,36 @@ void ContiguousStrategy::execute_copy(PacketsToFramesConverter& converter) {
   auto frame = converter.get_destination_frame_buffer();
   uint8_t* dst_ptr = static_cast<uint8_t*>(frame->get()) + converter.get_frame_position();
 
-  HOLOSCAN_LOG_TRACE("ContiguousStrategy: Executing copy with kind={} (src={}, dst={})",
-                     static_cast<int>(copy_kind_),
-                     static_cast<int>(src_memory_location_),
-                     static_cast<int>(frame->get_memory_location()));
+  PACKET_TRACE_LOG(
+      "ContiguousStrategy: Executing copy - frame_pos_before={}, copy_size={}, frame_total_size={}",
+      converter.get_frame_position(),
+      accumulated_contiguous_size_,
+      frame->get_size());
+
+  if (dst_ptr == nullptr) {
+    HOLOSCAN_LOG_ERROR("ERROR: dst_ptr is NULL! Skipping copy operation.");
+    return;
+  }
+  if (current_payload_start_ptr_ == nullptr) {
+    HOLOSCAN_LOG_ERROR("ERROR: current_payload_start_ptr_ is NULL! Skipping copy operation.");
+    return;
+  }
+  if (accumulated_contiguous_size_ == 0) {
+    HOLOSCAN_LOG_ERROR("WARNING: accumulated_contiguous_size_ is 0! Skipping copy operation.");
+    return;
+  }
+
+  size_t dst_offset = converter.get_frame_position();
+  size_t frame_size = frame->get_size();
+  if (dst_offset + accumulated_contiguous_size_ > frame_size) {
+    HOLOSCAN_LOG_ERROR(
+        "ERROR: Copy would exceed frame bounds! dst_offset={}, copy_size={}, frame_size={}. "
+        "Skipping copy operation.",
+        dst_offset,
+        accumulated_contiguous_size_,
+        frame_size);
+    return;
+  }
 
   CUDA_TRY(
       cudaMemcpy(dst_ptr, current_payload_start_ptr_, accumulated_contiguous_size_, copy_kind_));
@@ -95,11 +147,9 @@ void ContiguousStrategy::execute_copy(PacketsToFramesConverter& converter) {
   // Advance frame position by the amount we just copied
   converter.advance_frame_position(accumulated_contiguous_size_);
 
-  HOLOSCAN_LOG_TRACE("Frame position advanced to {} bytes ({:.1f}% of {} byte frame)",
-                     converter.get_frame_position(),
-                     (double)converter.get_frame_position() /
-                         converter.get_destination_frame_buffer()->get_size() * 100.0,
-                     converter.get_destination_frame_buffer()->get_size());
+  PACKET_TRACE_LOG("ContiguousStrategy: Copy completed - frame_pos_after={}, copy_size={}",
+                   converter.get_frame_position(),
+                   accumulated_contiguous_size_);
 
   // Reset accumulation state for next batch
   current_payload_start_ptr_ = nullptr;
@@ -113,6 +163,15 @@ void ContiguousStrategy::reset_state() {
 
 void StridedStrategy::process_packet(PacketsToFramesConverter& converter, uint8_t* payload,
                                      size_t payload_size) {
+  if (payload == nullptr) {
+    HOLOSCAN_LOG_ERROR("StridedStrategy: Received null payload pointer! Skipping packet.");
+    return;
+  }
+  if (payload_size == 0) {
+    HOLOSCAN_LOG_ERROR("StridedStrategy: Received zero payload size! Skipping packet.");
+    return;
+  }
+
   if (first_packet_ptr_ == nullptr) {
     reset_accumulation_state(payload, payload_size);
 
@@ -142,11 +201,6 @@ void StridedStrategy::process_packet(PacketsToFramesConverter& converter, uint8_
   last_packet_ptr_ = payload;
   packet_count_++;
   total_data_size_ += payload_size;
-
-  HOLOSCAN_LOG_TRACE("Strided strategy: Accumulated packet {} at {}, total_size: {}",
-                     packet_count_,
-                     static_cast<void*>(payload),
-                     total_data_size_);
 }
 
 void StridedStrategy::execute_copy(PacketsToFramesConverter& converter) {
@@ -171,16 +225,34 @@ void StridedStrategy::execute_accumulated_strided_copy(PacketsToFramesConverter&
   size_t src_pitch = actual_stride_;         // Actual detected stride
   size_t dst_pitch = width;                  // Destination pitch (contiguous)
 
-  HOLOSCAN_LOG_TRACE(
-      "Executing strided copy: width={}, height={}, src_pitch={}, dst_pitch={}, kind={} (src={}, "
-      "dst={})",
-      width,
-      height,
-      src_pitch,
-      dst_pitch,
-      static_cast<int>(copy_kind_),
-      static_cast<int>(src_memory_location_),
-      static_cast<int>(frame->get_memory_location()));
+  PACKET_TRACE_LOG("Executing strided copy: width={}, height={}, src_pitch={}, dst_pitch={}",
+                   width,
+                   height,
+                   src_pitch,
+                   dst_pitch);
+
+  if (dst_ptr == nullptr) {
+    HOLOSCAN_LOG_ERROR("ERROR: dst_ptr is NULL! Skipping strided copy operation.");
+    return;
+  }
+  if (first_packet_ptr_ == nullptr) {
+    HOLOSCAN_LOG_ERROR("ERROR: first_packet_ptr_ is NULL! Skipping strided copy operation.");
+    return;
+  }
+
+  // Check bounds to prevent frame overflow
+  size_t total_copy_size = width * height;
+  size_t dst_offset = converter.get_frame_position();
+  size_t frame_size = frame->get_size();
+  if (dst_offset + total_copy_size > frame_size) {
+    HOLOSCAN_LOG_ERROR(
+        "ERROR: Strided copy would exceed frame bounds! dst_offset={}, copy_size={}, "
+        "frame_size={}. Skipping copy operation.",
+        dst_offset,
+        total_copy_size,
+        frame_size);
+    return;
+  }
 
   CUDA_TRY(
       cudaMemcpy2D(dst_ptr, dst_pitch, first_packet_ptr_, src_pitch, width, height, copy_kind_));
@@ -193,11 +265,33 @@ void StridedStrategy::execute_individual_copy(PacketsToFramesConverter& converte
   auto frame = converter.get_destination_frame_buffer();
   uint8_t* dst_ptr = static_cast<uint8_t*>(frame->get()) + converter.get_frame_position();
 
-  HOLOSCAN_LOG_TRACE("Executing individual copy: size={}, kind={} (src={}, dst={})",
-                     payload_size,
-                     static_cast<int>(copy_kind_),
-                     static_cast<int>(src_memory_location_),
-                     static_cast<int>(frame->get_memory_location()));
+  PACKET_TRACE_LOG("Executing individual copy: size={}", payload_size);
+
+  if (dst_ptr == nullptr) {
+    HOLOSCAN_LOG_ERROR("ERROR: dst_ptr is NULL! Skipping individual copy operation.");
+    return;
+  }
+  if (payload_ptr == nullptr) {
+    HOLOSCAN_LOG_ERROR("ERROR: payload_ptr is NULL! Skipping individual copy operation.");
+    return;
+  }
+  if (payload_size == 0) {
+    HOLOSCAN_LOG_ERROR("WARNING: payload_size is 0! Skipping individual copy operation.");
+    return;
+  }
+
+  // Check bounds to prevent frame overflow
+  size_t dst_offset = converter.get_frame_position();
+  size_t frame_size = frame->get_size();
+  if (dst_offset + payload_size > frame_size) {
+    HOLOSCAN_LOG_ERROR(
+        "ERROR: Individual copy would exceed frame bounds! dst_offset={}, copy_size={}, "
+        "frame_size={}. Skipping copy operation.",
+        dst_offset,
+        payload_size,
+        frame_size);
+    return;
+  }
 
   CUDA_TRY(cudaMemcpy(dst_ptr, payload_ptr, payload_size, copy_kind_));
 
@@ -585,21 +679,39 @@ void PacketsToFramesConverter::process_incoming_packet(const RtpParams& rtp_para
     ensure_strategy_available();
   }
 
-  // Main data path - process packet
-  current_strategy_->process_packet(*this, payload, rtp_params.payload_size);
-
-  // Handle end of frame marker
+  // Check if this is the end-of-frame marker packet BEFORE processing
   if (rtp_params.m_bit) {
+    PACKET_TRACE_LOG(
+        "End-of-frame marker detected (M-bit=1) for seq={}, payload_size={}, frame_pos={}",
+        rtp_params.sequence_number,
+        rtp_params.payload_size,
+        current_byte_in_frame_);
+
+    // CRITICAL: Execute any pending copy operations from previous packets FIRST
+    // This ensures we don't mix data from multiple frames in the same copy operation
+    if (current_strategy_ && current_strategy_->has_pending_copy()) {
+      PACKET_TRACE_LOG(
+          "Executing pending copy operations before processing M-bit packet (frame_pos={})",
+          current_byte_in_frame_);
+      current_strategy_->execute_copy(*this);
+      PACKET_TRACE_LOG("Pending copy completed, frame_pos now={}", current_byte_in_frame_);
+    }
+
+    // Now process the final packet data for this frame
+    current_strategy_->process_packet(*this, payload, rtp_params.payload_size);
+    // Then handle end of frame
     handle_end_of_frame();
     return;
   }
+
+  // Main data path - process packet (only for non-marker packets)
+  current_strategy_->process_packet(*this, payload, rtp_params.payload_size);
 
   // Validate packet integrity (only for non-marker packets)
   const auto& [is_corrupted, error] = validate_packet_integrity(rtp_params);
   if (is_corrupted) {
     HOLOSCAN_LOG_ERROR("Frame is corrupted: {}", error);
-    waiting_for_end_of_frame_ = !rtp_params.m_bit;
-    if (rtp_params.m_bit) { reset_frame_state(); }
+    waiting_for_end_of_frame_ = true;  // Wait for next frame start
   }
 }
 
@@ -625,10 +737,6 @@ bool PacketsToFramesConverter::has_pending_copy() const {
     return false;
   }
   bool result = current_strategy_->has_pending_copy();
-  HOLOSCAN_LOG_DEBUG(
-      "has_pending_copy: strategy={}, result={}",
-      current_strategy_->get_strategy_type() == CopyStrategy::CONTIGUOUS ? "CONTIGUOUS" : "STRIDED",
-      result);
   return result;
 }
 
@@ -706,7 +814,10 @@ void PacketsToFramesConverter::ensure_strategy_available() {
 }
 
 void PacketsToFramesConverter::handle_end_of_frame() {
-  HOLOSCAN_LOG_TRACE("End of frame marker received, executing final copy");
+  PACKET_TRACE_LOG(
+      "End of frame marker received, executing final copy. Frame position: {}/{} bytes",
+      current_byte_in_frame_,
+      frame_->get_size());
 
   // Execute any remaining accumulated data
   current_strategy_->execute_copy(*this);
@@ -714,7 +825,17 @@ void PacketsToFramesConverter::handle_end_of_frame() {
   // Validate frame completion
   int64_t bytes_left = frame_->get_size() - current_byte_in_frame_;
   if (bytes_left > 0) {
-    HOLOSCAN_LOG_WARN("Frame incomplete after marker: {} bytes missing", bytes_left);
+    HOLOSCAN_LOG_WARN("Frame incomplete after marker: {} bytes missing (expected: {}, actual: {})",
+                      bytes_left,
+                      frame_->get_size(),
+                      current_byte_in_frame_);
+  } else if (bytes_left < 0) {
+    HOLOSCAN_LOG_ERROR("Frame overflow after marker: {} bytes too many (expected: {}, actual: {})",
+                       -bytes_left,
+                       frame_->get_size(),
+                       current_byte_in_frame_);
+  } else {
+    PACKET_TRACE_LOG("Frame completed successfully: {} bytes", current_byte_in_frame_);
   }
 
   // Complete frame and get new one

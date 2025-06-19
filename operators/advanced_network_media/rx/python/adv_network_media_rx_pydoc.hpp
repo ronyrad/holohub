@@ -40,6 +40,9 @@ Advanced Networking Media Receiver operator.
 This operator receives video frames over Rivermax-enabled network infrastructure
 and outputs them as GXF VideoBuffer entities.
 
+Note: Advanced network initialization must be done in the application before creating
+this operator using: adv_network_common.adv_net_init(config)
+
 Parameters
 ----------
 fragment : Fragment
@@ -53,15 +56,15 @@ frame_width : int, optional
 frame_height : int, optional
     Height of the video frame in pixels (default: 1080).
 bit_depth : int, optional
-    Bit depth of the video data (default: 10).
+    Bit depth of the video data (default: 8).
 video_format : str, optional
-    Video format for reception (default: "yuv422_rfc4175_be10").
+    Video format for reception (default: "RGB888").
 hds : bool, optional
-    High Dynamic Range setting (default: False).
+    Header Data Split setting (default: True).
 output_format : str, optional
-    Output format for the frames (default: "yuv420").
+    Output format for the frames (default: "video_buffer").
 memory_location : str, optional
-    Memory location for frame storage (default: "host").
+    Memory location for frame storage (default: "device").
 name : str, optional
     The name of the operator (default: "advanced_network_media_rx").
 )doc")

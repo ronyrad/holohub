@@ -75,16 +75,6 @@ class PyAdvNetworkMediaOpRx : public AdvNetworkMediaOpRx {
     spec_ = std::make_shared<OperatorSpec>(fragment);
     setup(*spec_.get());
 
-    // Use fragment->from_config to get configurations like the C++ version
-    try {
-      // Initialize advanced network if not already done
-      auto adv_net_config = fragment->from_config("advanced_network")
-                                .template as<holoscan::advanced_network::NetworkConfig>();
-      holoscan::advanced_network::adv_net_init(adv_net_config);
-    } catch (const std::exception& e) {
-      // Advanced network might already be initialized, ignore errors
-    }
-
     // Set parameters if provided
     if (!interface_name.empty()) { this->add_arg(Arg("interface_name", interface_name)); }
     this->add_arg(Arg("queue_id", queue_id));

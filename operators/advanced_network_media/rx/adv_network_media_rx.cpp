@@ -138,13 +138,13 @@ class AdvNetworkMediaOpRxImpl : public IFrameProvider {
             video_format_,
             storage_type_));
       } else {
-        frames_pool_.push_back(std::make_shared<AllocatedVideoBufferFrameBuffer>(
-            data,
-            frame_size_,
-            parent_.frame_width_.get(),
-            parent_.frame_height_.get(),
-            video_format_,
-            storage_type_));
+        frames_pool_.push_back(
+            std::make_shared<AllocatedVideoBufferFrameBuffer>(data,
+                                                              frame_size_,
+                                                              parent_.frame_width_.get(),
+                                                              parent_.frame_height_.get(),
+                                                              video_format_,
+                                                              storage_type_));
       }
     }
   }
@@ -196,18 +196,49 @@ class AdvNetworkMediaOpRxImpl : public IFrameProvider {
       total_packets_received_ = 0;
     }
 
+    PACKET_TRACE_LOG("Processing burst: port={}, queue={}, packets={}, burst_ptr={}",
+                     port_id_,
+                     parent_.queue_id_.get(),
+                     packets_received,
+                     static_cast<void*>(burst));
+
     append_to_frame(burst);
 
-    size_t frames_emitted = 0;
-    while (auto frame = pop_ready_frame()) {
-      HOLOSCAN_LOG_INFO("Emitting frame {}: {} bytes", frames_emitted + 1, frame->get_size());
-      auto result = create_frame_entity(frame, context);
-      op_output.emit(result);
-      frames_emitted++;
+    if (ready_frames_.empty()) return;
+
+    size_t total_frames = ready_frames_.size();
+
+    if (total_frames > 1) {
+      HOLOSCAN_LOG_WARN(
+          "Multiple frames ready ({}), dropping {} earlier frames to prevent pipeline issues",
+          total_frames,
+          total_frames - 1);
     }
 
-    if (frames_emitted > 0) {
-      HOLOSCAN_LOG_TRACE("Total frames emitted from this burst: {}", frames_emitted);
+    PACKET_TRACE_LOG("Ready frames count: {}, processing frame emission", total_frames);
+
+    // Pop all frames but keep only the last one
+    std::shared_ptr<FrameBufferBase> last_frame = nullptr;
+    while (auto frame = pop_ready_frame()) {
+      if (last_frame) {
+        // Return the previous frame back to pool (dropping it)
+        frames_pool_.push_back(last_frame);
+        PACKET_TRACE_LOG("Dropped frame returned to pool: size={}, ptr={}",
+                         last_frame->get_size(),
+                         static_cast<void*>(last_frame->get()));
+      }
+      last_frame = frame;
+    }
+
+    // Emit only the last (most recent) frame
+    if (last_frame) {
+      PACKET_TRACE_LOG("Emitting latest frame: {} bytes", last_frame->get_size());
+      PACKET_TRACE_LOG("Frame emission details: size={}, ptr={}, memory_location={}",
+                       last_frame->get_size(),
+                       static_cast<void*>(last_frame->get()),
+                       static_cast<int>(last_frame->get_memory_location()));
+      auto result = create_frame_entity(last_frame, context);
+      op_output.emit(result);
     }
   }
 
@@ -217,28 +248,33 @@ class AdvNetworkMediaOpRxImpl : public IFrameProvider {
    * @param burst The burst containing packets to process.
    */
   void append_to_frame(BurstParams* burst) {
-    // Count ready frames before processing
     size_t ready_frames_before = ready_frames_.size();
 
-    HOLOSCAN_LOG_INFO("Processing burst: ready_frames_before={}, queue_size={}",
-                      ready_frames_before,
-                      bursts_awaiting_cleanup_.size());
+    PACKET_TRACE_LOG("Processing burst: ready_frames_before={}, queue_size={}, burst_packets={}",
+                     ready_frames_before,
+                     bursts_awaiting_cleanup_.size(),
+                     burst->hdr.hdr.num_pkts);
 
     burst_processor_->process_burst(burst, parent_.hds_.get());
 
-    // Count ready frames after processing
     size_t ready_frames_after = ready_frames_.size();
 
-    HOLOSCAN_LOG_INFO("Burst processed: ready_frames_after={}", ready_frames_after);
+    PACKET_TRACE_LOG("Burst processed: ready_frames_after={}, frames_completed={}",
+                     ready_frames_after,
+                     ready_frames_after - ready_frames_before);
 
     // If new frames were completed, free all accumulated bursts
     if (ready_frames_after > ready_frames_before) {
       size_t frames_completed = ready_frames_after - ready_frames_before;
-      HOLOSCAN_LOG_INFO("{} frame(s) completed, freeing {} accumulated bursts",
-                        frames_completed,
-                        bursts_awaiting_cleanup_.size());
+      PACKET_TRACE_LOG("{} frame(s) completed, freeing {} accumulated bursts",
+                       frames_completed,
+                       bursts_awaiting_cleanup_.size());
+      PACKET_TRACE_LOG("Freeing accumulated bursts: count={}", bursts_awaiting_cleanup_.size());
       while (!bursts_awaiting_cleanup_.empty()) {
         auto burst_to_free = bursts_awaiting_cleanup_.front();
+        PACKET_TRACE_LOG("Freeing burst: ptr={}, packets={}",
+                         static_cast<void*>(burst_to_free),
+                         burst_to_free->hdr.hdr.num_pkts);
         free_all_packets_and_burst_rx(burst_to_free);
         bursts_awaiting_cleanup_.pop_front();
       }
@@ -247,7 +283,9 @@ class AdvNetworkMediaOpRxImpl : public IFrameProvider {
     // Add current burst to the queue after freeing previous bursts
     bursts_awaiting_cleanup_.push_back(burst);
 
-    HOLOSCAN_LOG_INFO("Final queue_size={}", bursts_awaiting_cleanup_.size());
+    PACKET_TRACE_LOG("Final queue_size={}, burst_ptr={}",
+                     bursts_awaiting_cleanup_.size(),
+                     static_cast<void*>(burst));
   }
 
   /**
@@ -302,7 +340,7 @@ class AdvNetworkMediaOpRxImpl : public IFrameProvider {
 
   void on_new_frame(std::shared_ptr<FrameBufferBase> frame) override {
     ready_frames_.push_back(frame);
-    HOLOSCAN_LOG_INFO("New frame ready: {}", frame->get_size());
+    PACKET_TRACE_LOG("New frame ready: {}", frame->get_size());
   }
 
  private:
