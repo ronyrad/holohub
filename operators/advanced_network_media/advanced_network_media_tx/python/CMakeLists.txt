@@ -22,7 +22,7 @@ set(MODULE_CLASS_NAME "*")
 
 pybind11_add_holohub_module(
     CPP_CMAKE_TARGET advanced_network_media_tx
-    CLASS_NAME "AdvNetworkMediaOpTx"
+    CLASS_NAME "AdvNetworkMediaTxOp"
     SOURCES adv_network_media_tx_pybind.cpp
 )
 

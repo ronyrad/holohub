@@ -51,13 +51,13 @@ namespace holoscan::ops {
  * The sequence of events in this constructor is based on Fragment::make_operator<OperatorT>
  */
 
-class PyAdvNetworkMediaOpTx : public AdvNetworkMediaOpTx {
+class PyAdvNetworkMediaTxOp : public AdvNetworkMediaTxOp {
  public:
   /* Inherit the constructors */
-  using AdvNetworkMediaOpTx::AdvNetworkMediaOpTx;
+  using AdvNetworkMediaTxOp::AdvNetworkMediaTxOp;
 
   // Define a constructor that fully initializes the object.
-  PyAdvNetworkMediaOpTx(Fragment* fragment, const py::args& args,
+  PyAdvNetworkMediaTxOp(Fragment* fragment, const py::args& args,
                         const std::string& interface_name = "",
                         uint16_t queue_id = default_queue_id,
                         const std::string& video_format = "RGB888", uint32_t bit_depth = 8,
@@ -95,11 +95,11 @@ PYBIND11_MODULE(_advanced_network_media_tx, m) {
   m.attr("__version__") = "dev";
 #endif
 
-  py::class_<AdvNetworkMediaOpTx,
-             PyAdvNetworkMediaOpTx,
+  py::class_<AdvNetworkMediaTxOp,
+             PyAdvNetworkMediaTxOp,
              Operator,
-             std::shared_ptr<AdvNetworkMediaOpTx>>(
-      m, "AdvNetworkMediaOpTx", doc::AdvNetworkMediaOpTx::doc_AdvNetworkMediaOpTx)
+             std::shared_ptr<AdvNetworkMediaTxOp>>(
+      m, "AdvNetworkMediaTxOp", doc::AdvNetworkMediaTxOp::doc_AdvNetworkMediaTxOp)
       .def(py::init<Fragment*,
                     const py::args&,
                     const std::string&,
@@ -111,14 +111,14 @@ PYBIND11_MODULE(_advanced_network_media_tx, m) {
                     const std::string&>(),
            "fragment"_a,
            "interface_name"_a = ""s,
-           "queue_id"_a = AdvNetworkMediaOpTx::default_queue_id,
+           "queue_id"_a = AdvNetworkMediaTxOp::default_queue_id,
            "video_format"_a = "RGB888"s,
            "bit_depth"_a = 8,
            "frame_width"_a = 1920,
            "frame_height"_a = 1080,
            "name"_a = "advanced_network_media_tx"s,
-           doc::AdvNetworkMediaOpTx::doc_AdvNetworkMediaOpTx_python)
-      .def("initialize", &AdvNetworkMediaOpTx::initialize, doc::AdvNetworkMediaOpTx::doc_initialize)
-      .def("setup", &AdvNetworkMediaOpTx::setup, "spec"_a, doc::AdvNetworkMediaOpTx::doc_setup);
+           doc::AdvNetworkMediaTxOp::doc_AdvNetworkMediaTxOp_python)
+      .def("initialize", &AdvNetworkMediaTxOp::initialize, doc::AdvNetworkMediaTxOp::doc_initialize)
+      .def("setup", &AdvNetworkMediaTxOp::setup, "spec"_a, doc::AdvNetworkMediaTxOp::doc_setup);
 }  // PYBIND11_MODULE NOLINT
 }  // namespace holoscan::ops

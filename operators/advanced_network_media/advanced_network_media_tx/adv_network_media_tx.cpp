@@ -24,13 +24,13 @@
 namespace holoscan::ops {
 
 /**
- * @class AdvNetworkMediaOpTxImpl
- * @brief Implementation class for the AdvNetworkMediaOpTx operator.
+ * @class AdvNetworkMediaTxOpImpl
+ * @brief Implementation class for the AdvNetworkMediaTxOp operator.
  * 
  * Handles the actual processing of media frames and communication with 
  * the network infrastructure.
  */
-class AdvNetworkMediaOpTxImpl {
+class AdvNetworkMediaTxOpImpl {
  public:
   static constexpr int DISPLAY_WARNING_AFTER_BURST_NOT_AVAILABLE = 1000;
   static constexpr int SLEEP_WHEN_BURST_NOT_AVAILABLE_US = 100;
@@ -40,7 +40,7 @@ class AdvNetworkMediaOpTxImpl {
    *
    * @param parent Reference to the parent operator.
    */
-  explicit AdvNetworkMediaOpTxImpl(AdvNetworkMediaOpTx& parent) : parent_(parent) {}
+  explicit AdvNetworkMediaTxOpImpl(AdvNetworkMediaTxOp& parent) : parent_(parent) {}
 
   /**
    * @brief Initializes the implementation.
@@ -49,7 +49,7 @@ class AdvNetworkMediaOpTxImpl {
    * for media transmission.
    */
   void initialize() {
-    HOLOSCAN_LOG_INFO("AdvNetworkMediaOpTx::initialize()");
+    HOLOSCAN_LOG_INFO("AdvNetworkMediaTxOp::initialize()");
     try {
       port_id_ = get_port_id(parent_.interface_name_.get());
       if (port_id_ == -1) {
@@ -68,9 +68,9 @@ class AdvNetworkMediaOpTxImpl {
 
       expected_video_format_ = get_expected_gxf_video_format(video_sampling_, color_bit_depth_);
 
-      HOLOSCAN_LOG_INFO("AdvNetworkMediaOpTx::initialize() complete");
+      HOLOSCAN_LOG_INFO("AdvNetworkMediaTxOp::initialize() complete");
     } catch (const std::exception& e) {
-      HOLOSCAN_LOG_ERROR("Error in AdvNetworkMediaOpTx initialization: {}", e.what());
+      HOLOSCAN_LOG_ERROR("Error in AdvNetworkMediaTxOp initialization: {}", e.what());
       throw;
     }
   }
@@ -210,7 +210,7 @@ class AdvNetworkMediaOpTxImpl {
       sent++;
     }
     cur_msg_ = nullptr;
-    HOLOSCAN_LOG_TRACE("AdvNetworkMediaOpTx::process_output() {}:{} done. Emitted{}/Error{}",
+    HOLOSCAN_LOG_TRACE("AdvNetworkMediaTxOp::process_output() {}:{} done. Emitted{}/Error{}",
                        port_id_,
                        parent_.queue_id_.get(),
                        sent,
@@ -226,31 +226,31 @@ class AdvNetworkMediaOpTxImpl {
   VideoColorBitDepth color_bit_depth_;
 
  private:
-  AdvNetworkMediaOpTx& parent_;
+  AdvNetworkMediaTxOp& parent_;
 };
 
-AdvNetworkMediaOpTx::AdvNetworkMediaOpTx() : pimpl_(nullptr) {
+AdvNetworkMediaTxOp::AdvNetworkMediaTxOp() : pimpl_(nullptr) {
 }
 
-AdvNetworkMediaOpTx::~AdvNetworkMediaOpTx() {
+AdvNetworkMediaTxOp::~AdvNetworkMediaTxOp() {
   if (pimpl_) {
     delete pimpl_;
     pimpl_ = nullptr;
   }
 }
 
-void AdvNetworkMediaOpTx::initialize() {
-  HOLOSCAN_LOG_INFO("AdvNetworkMediaOpTx::initialize()");
+void AdvNetworkMediaTxOp::initialize() {
+  HOLOSCAN_LOG_INFO("AdvNetworkMediaTxOp::initialize()");
   holoscan::Operator::initialize();
 
   if (!pimpl_) {
-    pimpl_ = new AdvNetworkMediaOpTxImpl(*this);
+    pimpl_ = new AdvNetworkMediaTxOpImpl(*this);
   }
 
   pimpl_->initialize();
 }
 
-void AdvNetworkMediaOpTx::setup(OperatorSpec& spec) {
+void AdvNetworkMediaTxOp::setup(OperatorSpec& spec) {
   spec.input<nvidia::gxf::Entity>("input");
   spec.param<std::string>(interface_name_,
     "interface_name",
@@ -265,7 +265,7 @@ void AdvNetworkMediaOpTx::setup(OperatorSpec& spec) {
       video_format_, "video_format", "Video Format", "Video sample format", std::string("RGB888"));
 }
 
-void AdvNetworkMediaOpTx::compute(InputContext& op_input, OutputContext& op_output,
+void AdvNetworkMediaTxOp::compute(InputContext& op_input, OutputContext& op_output,
                                   ExecutionContext& context) {
   pimpl_->process_input(op_input);
   pimpl_->process_output(op_output);

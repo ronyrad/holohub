@@ -24,37 +24,37 @@
 namespace holoscan::ops {
 
 // Forward declare the implementation class
-class AdvNetworkMediaOpTxImpl;
+class AdvNetworkMediaTxOpImpl;
 
 /**
- * @class AdvNetworkMediaOpTx
+ * @class AdvNetworkMediaTxOp
  * @brief Operator for transmitting media frames over advanced network infrastructure.
  * 
  * This operator processes video frames from GXF entities (either VideoBuffer or Tensor)
  * and transmits them over Rivermax-enabled network infrastructure.
  */
-class AdvNetworkMediaOpTx : public Operator {
+class AdvNetworkMediaTxOp : public Operator {
  public:
   static constexpr uint16_t default_queue_id = 0;
 
-  HOLOSCAN_OPERATOR_FORWARD_ARGS(AdvNetworkMediaOpTx)
+  HOLOSCAN_OPERATOR_FORWARD_ARGS(AdvNetworkMediaTxOp)
 
   /**
-   * @brief Constructs an AdvNetworkMediaOpTx operator.
+   * @brief Constructs an AdvNetworkMediaTxOp operator.
    */
-  AdvNetworkMediaOpTx();
+  AdvNetworkMediaTxOp();
 
   /**
-   * @brief Destroys the AdvNetworkMediaOpTx operator and its implementation.
+   * @brief Destroys the AdvNetworkMediaTxOp operator and its implementation.
    */
-  ~AdvNetworkMediaOpTx();
+  ~AdvNetworkMediaTxOp();
 
   void initialize() override;
   void setup(OperatorSpec& spec) override;
   void compute(InputContext& op_input, OutputContext& op_output, ExecutionContext&) override;
 
  private:
-  friend class AdvNetworkMediaOpTxImpl;
+  friend class AdvNetworkMediaTxOpImpl;
 
   // Parameters
   Parameter<std::string> interface_name_;
@@ -64,7 +64,7 @@ class AdvNetworkMediaOpTx : public Operator {
   Parameter<uint32_t> frame_width_;
   Parameter<uint32_t> frame_height_;
 
-  AdvNetworkMediaOpTxImpl* pimpl_;
+  AdvNetworkMediaTxOpImpl* pimpl_;
 };
 
 }  // namespace holoscan::ops

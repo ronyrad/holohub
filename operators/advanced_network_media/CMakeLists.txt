@@ -14,7 +14,6 @@
 # limitations under the License.
 
 cmake_minimum_required(VERSION 3.20)
-#project(advanced_network_media LANGUAGES NONE)
 
 # Build common code first
 add_subdirectory(common)

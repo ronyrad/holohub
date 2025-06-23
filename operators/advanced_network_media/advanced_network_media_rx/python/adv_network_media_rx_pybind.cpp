@@ -55,13 +55,13 @@ namespace holoscan::ops {
  * The sequence of events in this constructor is based on Fragment::make_operator<OperatorT>
  */
 
-class PyAdvNetworkMediaOpRx : public AdvNetworkMediaOpRx {
+class PyAdvNetworkMediaRxOp : public AdvNetworkMediaRxOp {
  public:
   /* Inherit the constructors */
-  using AdvNetworkMediaOpRx::AdvNetworkMediaOpRx;
+  using AdvNetworkMediaRxOp::AdvNetworkMediaRxOp;
 
   // Define a constructor that fully initializes the object.
-  PyAdvNetworkMediaOpRx(Fragment* fragment, const py::args& args,
+  PyAdvNetworkMediaRxOp(Fragment* fragment, const py::args& args,
                         const std::string& interface_name = "",
                         uint16_t queue_id = default_queue_id, uint32_t frame_width = 1920,
                         uint32_t frame_height = 1080, uint32_t bit_depth = 8,
@@ -104,11 +104,11 @@ PYBIND11_MODULE(_advanced_network_media_rx, m) {
   m.attr("__version__") = "dev";
 #endif
 
-  py::class_<AdvNetworkMediaOpRx,
-             PyAdvNetworkMediaOpRx,
+  py::class_<AdvNetworkMediaRxOp,
+             PyAdvNetworkMediaRxOp,
              Operator,
-             std::shared_ptr<AdvNetworkMediaOpRx>>(
-      m, "AdvNetworkMediaOpRx", doc::AdvNetworkMediaOpRx::doc_AdvNetworkMediaOpRx)
+             std::shared_ptr<AdvNetworkMediaRxOp>>(
+      m, "AdvNetworkMediaRxOp", doc::AdvNetworkMediaRxOp::doc_AdvNetworkMediaRxOp)
       .def(py::init<Fragment*,
                     const py::args&,
                     const std::string&,
@@ -123,7 +123,7 @@ PYBIND11_MODULE(_advanced_network_media_rx, m) {
                     const std::string&>(),
            "fragment"_a,
            "interface_name"_a = ""s,
-           "queue_id"_a = AdvNetworkMediaOpRx::default_queue_id,
+           "queue_id"_a = AdvNetworkMediaRxOp::default_queue_id,
            "frame_width"_a = 1920,
            "frame_height"_a = 1080,
            "bit_depth"_a = 8,
@@ -132,8 +132,8 @@ PYBIND11_MODULE(_advanced_network_media_rx, m) {
            "output_format"_a = "video_buffer"s,
            "memory_location"_a = "device"s,
            "name"_a = "advanced_network_media_rx"s,
-           doc::AdvNetworkMediaOpRx::doc_AdvNetworkMediaOpRx_python)
-      .def("initialize", &AdvNetworkMediaOpRx::initialize, doc::AdvNetworkMediaOpRx::doc_initialize)
-      .def("setup", &AdvNetworkMediaOpRx::setup, "spec"_a, doc::AdvNetworkMediaOpRx::doc_setup);
+           doc::AdvNetworkMediaRxOp::doc_AdvNetworkMediaRxOp_python)
+      .def("initialize", &AdvNetworkMediaRxOp::initialize, doc::AdvNetworkMediaRxOp::doc_initialize)
+      .def("setup", &AdvNetworkMediaRxOp::setup, "spec"_a, doc::AdvNetworkMediaRxOp::doc_setup);
 }  // PYBIND11_MODULE NOLINT
 }  // namespace holoscan::ops

@@ -24,17 +24,17 @@
 
 namespace holoscan::doc {
 
-namespace AdvNetworkMediaOpTx {
+namespace AdvNetworkMediaTxOp {
 
-PYDOC(AdvNetworkMediaOpTx, R"doc(
+PYDOC(AdvNetworkMediaTxOp, R"doc(
 Advanced Networking Media Transmitter operator.
 
 This operator processes video frames from GXF entities (either VideoBuffer or Tensor)
 and transmits them over Rivermax-enabled network infrastructure.
 )doc")
 
-// PyAdvNetworkMediaOpTx Constructor
-PYDOC(AdvNetworkMediaOpTx_python, R"doc(
+// PyAdvNetworkMediaTxOp Constructor
+PYDOC(AdvNetworkMediaTxOp_python, R"doc(
 Advanced Networking Media Transmitter operator.
 
 This operator processes video frames from GXF entities (either VideoBuffer or Tensor)
@@ -85,7 +85,7 @@ spec : ``holoscan.core.OperatorSpec``
     The operator specification.
 )doc")
 
-}  // namespace AdvNetworkMediaOpTx
+}  // namespace AdvNetworkMediaTxOp
 
 }  // namespace holoscan::doc
 

@@ -23,30 +23,30 @@
 namespace holoscan::ops {
 
 // Forward declare the implementation class
-class AdvNetworkMediaOpRxImpl;
+class AdvNetworkMediaRxOpImpl;
 
 /**
- * @class AdvNetworkMediaOpRx
+ * @class AdvNetworkMediaRxOp
  * @brief Operator for receiving media frames over advanced network infrastructure.
  * 
  * This operator receives video frames over Rivermax-enabled network infrastructure
  * and outputs them as GXF VideoBuffer entities.
  */
-class AdvNetworkMediaOpRx : public Operator {
+class AdvNetworkMediaRxOp : public Operator {
  public:
   static constexpr uint16_t default_queue_id = 0;
 
-  HOLOSCAN_OPERATOR_FORWARD_ARGS(AdvNetworkMediaOpRx)
+  HOLOSCAN_OPERATOR_FORWARD_ARGS(AdvNetworkMediaRxOp)
 
   /**
-   * @brief Constructs an AdvNetworkMediaOpRx operator.
+   * @brief Constructs an AdvNetworkMediaRxOp operator.
    */
-  AdvNetworkMediaOpRx();
+  AdvNetworkMediaRxOp();
 
   /**
-   * @brief Destroys the AdvNetworkMediaOpRx operator and its implementation.
+   * @brief Destroys the AdvNetworkMediaRxOp operator and its implementation.
    */
-  ~AdvNetworkMediaOpRx();
+  ~AdvNetworkMediaRxOp();
 
   void initialize() override;
   void setup(OperatorSpec& spec) override;
@@ -66,9 +66,9 @@ class AdvNetworkMediaOpRx : public Operator {
   Parameter<std::string> memory_location_;
 
  private:
-  friend class AdvNetworkMediaOpRxImpl;
+  friend class AdvNetworkMediaRxOpImpl;
 
-  AdvNetworkMediaOpRxImpl* pimpl_;
+  AdvNetworkMediaRxOpImpl* pimpl_;
 };
 
 }  // namespace holoscan::ops

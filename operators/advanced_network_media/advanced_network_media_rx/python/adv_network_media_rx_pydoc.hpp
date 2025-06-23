@@ -24,17 +24,17 @@
 
 namespace holoscan::doc {
 
-namespace AdvNetworkMediaOpRx {
+namespace AdvNetworkMediaRxOp {
 
-PYDOC(AdvNetworkMediaOpRx, R"doc(
+PYDOC(AdvNetworkMediaRxOp, R"doc(
 Advanced Networking Media Receiver operator.
 
 This operator receives video frames over Rivermax-enabled network infrastructure
 and outputs them as GXF VideoBuffer entities.
 )doc")
 
-// PyAdvNetworkMediaOpRx Constructor
-PYDOC(AdvNetworkMediaOpRx_python, R"doc(
+// PyAdvNetworkMediaRxOp Constructor
+PYDOC(AdvNetworkMediaRxOp_python, R"doc(
 Advanced Networking Media Receiver operator.
 
 This operator receives video frames over Rivermax-enabled network infrastructure
@@ -94,7 +94,7 @@ spec : ``holoscan.core.OperatorSpec``
     The operator specification.
 )doc")
 
-}  // namespace AdvNetworkMediaOpRx
+}  // namespace AdvNetworkMediaRxOp
 
 }  // namespace holoscan::doc
 

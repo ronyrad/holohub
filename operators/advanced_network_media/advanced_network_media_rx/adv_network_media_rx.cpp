@@ -39,20 +39,20 @@ constexpr size_t PACKETS_DISPLAY_INTERVAL = 1000000;  // 1e6 packets
 enum class OutputFormatType { VIDEO_BUFFER, TENSOR };
 
 /**
- * @class AdvNetworkMediaOpRxImpl
- * @brief Implementation class for the AdvNetworkMediaOpRx operator.
+ * @class AdvNetworkMediaRxOpImpl
+ * @brief Implementation class for the AdvNetworkMediaRxOp operator.
  *
  * Handles high-level network management, frame pool management, and
  * coordinates with BurstProcessor for packet-level operations.
  */
-class AdvNetworkMediaOpRxImpl : public IFrameProvider {
+class AdvNetworkMediaRxOpImpl : public IFrameProvider {
  public:
   /**
    * @brief Constructs an implementation for the given operator.
    *
    * @param parent Reference to the parent operator.
    */
-  explicit AdvNetworkMediaOpRxImpl(AdvNetworkMediaOpRx& parent) : parent_(parent) {}
+  explicit AdvNetworkMediaRxOpImpl(AdvNetworkMediaRxOp& parent) : parent_(parent) {}
 
   /**
    * @brief Initializes the implementation.
@@ -61,7 +61,7 @@ class AdvNetworkMediaOpRxImpl : public IFrameProvider {
    * for media reception.
    */
   void initialize() {
-    HOLOSCAN_LOG_INFO("AdvNetworkMediaOpRx::initialize()");
+    HOLOSCAN_LOG_INFO("AdvNetworkMediaRxOp::initialize()");
     port_id_ = get_port_id(parent_.interface_name_.get());
     if (port_id_ == -1) {
       HOLOSCAN_LOG_ERROR("Invalid RX port {} specified in the config",
@@ -344,7 +344,7 @@ class AdvNetworkMediaOpRxImpl : public IFrameProvider {
   }
 
  private:
-  AdvNetworkMediaOpRx& parent_;
+  AdvNetworkMediaRxOp& parent_;
   int port_id_;
   std::unique_ptr<BurstProcessor> burst_processor_;
   std::deque<std::shared_ptr<FrameBufferBase>> frames_pool_;
@@ -357,9 +357,9 @@ class AdvNetworkMediaOpRxImpl : public IFrameProvider {
   nvidia::gxf::MemoryStorageType storage_type_{nvidia::gxf::MemoryStorageType::kDevice};
 };
 
-AdvNetworkMediaOpRx::AdvNetworkMediaOpRx() : pimpl_(nullptr) {}
+AdvNetworkMediaRxOp::AdvNetworkMediaRxOp() : pimpl_(nullptr) {}
 
-AdvNetworkMediaOpRx::~AdvNetworkMediaOpRx() {
+AdvNetworkMediaRxOp::~AdvNetworkMediaRxOp() {
   if (pimpl_) {
     pimpl_->cleanup();  // Clean up allocated resources
     delete pimpl_;
@@ -367,7 +367,7 @@ AdvNetworkMediaOpRx::~AdvNetworkMediaOpRx() {
   }
 }
 
-void AdvNetworkMediaOpRx::setup(OperatorSpec& spec) {
+void AdvNetworkMediaRxOp::setup(OperatorSpec& spec) {
   spec.output<nvidia::gxf::Entity>("out_video_buffer");
   spec.param<std::string>(interface_name_,
                           "interface_name",
@@ -395,16 +395,16 @@ void AdvNetworkMediaOpRx::setup(OperatorSpec& spec) {
              std::string("device"));
 }
 
-void AdvNetworkMediaOpRx::initialize() {
-  HOLOSCAN_LOG_INFO("AdvNetworkMediaOpRx::initialize()");
+void AdvNetworkMediaRxOp::initialize() {
+  HOLOSCAN_LOG_INFO("AdvNetworkMediaRxOp::initialize()");
   holoscan::Operator::initialize();
 
-  if (!pimpl_) { pimpl_ = new AdvNetworkMediaOpRxImpl(*this); }
+  if (!pimpl_) { pimpl_ = new AdvNetworkMediaRxOpImpl(*this); }
 
   pimpl_->initialize();
 }
 
-void AdvNetworkMediaOpRx::compute(InputContext& op_input, OutputContext& op_output,
+void AdvNetworkMediaRxOp::compute(InputContext& op_input, OutputContext& op_output,
                                   ExecutionContext& context) {
   pimpl_->compute(op_input, op_output, context);
 }

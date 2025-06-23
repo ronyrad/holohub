@@ -19,9 +19,9 @@
 				"2.6.0"
 			]
 		},
-		"ranking": 1,
+		"ranking": 3,
 		"dependencies": {
-				"gxf_extensions": [{
+				"operators": [{
 					"name": "advanced_network",
 					"version": "1.4"
 				}
