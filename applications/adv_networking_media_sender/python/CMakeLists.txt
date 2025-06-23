@@ -19,9 +19,15 @@
 #   DEPENDS advanced_network_python
 # )
 
+# Install application and dependencies into the install/ directory for packaging
 install(
-  FILES main.py
-  DESTINATION examples/adv_networking_bench/
-  RENAME adv_networking_bench.py
-  COMPONENT adv_networking_bench-py
+  FILES adv_networking_media_sender.py
+  DESTINATION bin/adv_networking_media_sender/python
+  COMPONENT adv_networking_media_sender-py
+)
+
+install(
+  FILES ../adv_networking_media_sender.yaml
+  DESTINATION bin/adv_networking_media_sender/python
+  COMPONENT adv_networking_media_sender-py
 )

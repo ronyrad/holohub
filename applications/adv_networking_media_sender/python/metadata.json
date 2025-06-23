@@ -1,9 +1,9 @@
 {
 	"application": {
-		"name": "Advanced Networking Benchmark",
+		"name": "Advanced Networking Media Sender",
 		"authors": [
 			{
-				"name": "Cliff Burdick",
+				"name": "Rony Rado",
 				"affiliation": "NVIDIA"
 			}
 		],
@@ -13,27 +13,26 @@
 			"1.0": "Initial Release"
 		},
 		"platforms": ["x86_64", "aarch64"],
-		"tags": ["Network", "Networking", "UDP", "Ethernet", "IP", "TCP"],
+		"tags": ["Network", "Networking", "UDP", "Ethernet", "IP", "TCP", "Rivermax"],
 		"dockerfile": "operators/advanced_network/Dockerfile",
 		"holoscan_sdk": {
-			"minimum_required_version": "0.6.0",
+			"minimum_required_version": "2.6.0",
 			"tested_versions": [
-				"0.6.0"
+				"2.6.0"
 			]
 		},
-		"ranking": 1,
+		"ranking": 3,
 		"dependencies": {
 			"operators": [{
-				"name": "adv_network_rx",
+				"name": "advanced_network_media_tx",
 				"version": "1.0"
-			},
-      {
-				"name": "adv_network_tx",
-				"version": "1.0"
+			}, {
+				"name": "advanced_network",
+				"version": "1.4"
 			}]
 		},
 		"run": {
-			"command": "python3 <holohub_app_source>/main.py",
+			"command": "<holohub_app_bin>/adv_networking_media_sender adv_networking_media_sender.yaml",
 			"workdir": "holohub_app_bin"
 		}
 	}

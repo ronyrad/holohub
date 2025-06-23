@@ -8,28 +8,31 @@
 			}
 		],
 		"language": "C++",
-		"version": "1.3",
+		"version": "1.0",
 		"changelog": {
 			"1.0": "Initial Release"
 		},
 		"platforms": ["x86_64", "aarch64"],
-		"tags": ["Network", "Networking", "UDP", "Ethernet", "IP", "GPUDirect", "Rivermax"],
+		"tags": ["Network", "Networking", "UDP", "Ethernet", "IP", "GPUDirect", "Rivermax", "Media", "Media Sender"],
 		"dockerfile": "operators/advanced_network/Dockerfile",
 		"holoscan_sdk": {
-			"minimum_required_version": "0.6.0",
+			"minimum_required_version": "2.6.0",
 			"tested_versions": [
-				"0.6.0"
+				"2.6.0"
 			]
 		},
-		"ranking": 1,
+		"ranking": 3,
 		"dependencies": {
-			"gxf_extensions": [{
-				"name": "advanced_networking_media_sender",
-				"version": "1.2"
+			"operators": [{
+				"name": "advanced_network_media_tx",
+				"version": "1.0"
+			}, {
+				"name": "advanced_network",
+				"version": "1.4"
 			}]
 		},
 		"run": {
-			"command": "<holohub_app_bin>/adv_networking_media_sender adv_networking_media_tx.yaml",
+			"command": "<holohub_app_bin>/adv_networking_media_sender adv_networking_media_sender.yaml",
 			"workdir": "holohub_bin"
 		}
 	}

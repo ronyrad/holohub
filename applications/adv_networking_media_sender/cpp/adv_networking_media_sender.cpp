@@ -49,7 +49,7 @@ class App : public holoscan::Application {
       exit(1);
     }
 
-    auto adv_net_media_tx = make_operator<ops::AdvNetworkMediaOpTx>(
+    auto adv_net_media_tx = make_operator<ops::AdvNetworkMediaTxOp>(
         "advanced_network_media_tx", from_config("advanced_network_media_tx"));
 
     ArgList args;

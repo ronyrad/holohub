@@ -25,7 +25,7 @@ set(CMAKE_CUDA_ARCHITECTURES "70;80;90")
 
 # Create the executable
 add_executable(${PROJECT_NAME}
-  main.cpp
+  adv_networking_media_sender.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}
@@ -37,11 +37,11 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 # Copy config file
-add_custom_target(adv_networking_media_tx_yaml
-  COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/../adv_networking_media_tx.yaml" ${CMAKE_CURRENT_BINARY_DIR}
-  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../adv_networking_media_tx.yaml"
+add_custom_target(adv_networking_media_sender_yaml
+  COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/../adv_networking_media_sender.yaml" ${CMAKE_CURRENT_BINARY_DIR}
+  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../adv_networking_media_sender.yaml"
 )
-add_dependencies(${PROJECT_NAME} adv_networking_media_tx_yaml)
+add_dependencies(${PROJECT_NAME} adv_networking_media_sender_yaml)
 
 
 # Installation
@@ -51,7 +51,7 @@ install(TARGETS ${PROJECT_NAME}
 
 install(
   FILES
-    ../adv_networking_media_tx.yaml
+    ../adv_networking_media_sender.yaml
   DESTINATION examples/${PROJECT_NAME}
   COMPONENT ${PROJECT_NAME}-configs
   PERMISSIONS OWNER_READ OWNER_WRITE
@@ -71,8 +71,7 @@ install(
 
 install(
   FILES
-    main.cpp
-    default_bench_op_tx.h
+    adv_networking_media_sender.cpp
   DESTINATION examples/${PROJECT_NAME}
   COMPONENT ${PROJECT_NAME}-cppsrc
   PERMISSIONS OWNER_READ OWNER_WRITE
