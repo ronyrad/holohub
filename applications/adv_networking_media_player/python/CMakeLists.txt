@@ -13,8 +13,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Add subdirectories
-add_subdirectory(cpp)
-if(HOLOHUB_BUILD_PYTHON)
-  add_subdirectory(python)
-endif()
+# target does nothing but be created if this folder is reached
+# to set dependencies on adequate operators
+# add_custom_target(advanced_networking_bench_python ALL
+#   DEPENDS advanced_network_python
+# )
+
+# Install application and dependencies into the install/ directory for packaging
+install(
+  FILES adv_networking_media_player.py
+  DESTINATION bin/adv_networking_media_player/python
+  COMPONENT adv_networking_media_player-py
+)
+
+install(
+  FILES ../adv_networking_media_player.yaml
+  DESTINATION bin/adv_networking_media_player/python
+  COMPONENT adv_networking_media_player-py
+)

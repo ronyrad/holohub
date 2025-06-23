@@ -81,10 +81,10 @@ def check_rx_tx_enabled(app, require_rx=True, require_tx=False):
         # Fallback: check if we have the required operator configs
         try:
             if require_rx:
-                rx_config = app.from_config("advanced_network_media_rx")
+                app.from_config("advanced_network_media_rx")
                 logger.info("RX is enabled (found advanced_network_media_rx config)")
             if require_tx:
-                tx_config = app.from_config("advanced_network_media_tx")
+                app.from_config("advanced_network_media_tx")
                 logger.info("TX is enabled (found advanced_network_media_tx config)")
             return require_rx, require_tx
         except Exception as e2:
@@ -141,7 +141,7 @@ class App(Application):
         try:
             rx_config = self.kwargs("advanced_network_media_rx")
 
-            adv_net_media_rx = adv_network_media_rx.AdvNetworkMediaOpRx(
+            adv_net_media_rx = adv_network_media_rx.AdvNetworkMediaRxOp(
                 fragment=self,
                 interface_name=rx_config.get("interface_name", ""),
                 queue_id=rx_config.get("queue_id", 0),
@@ -156,7 +156,7 @@ class App(Application):
             )
 
         except Exception as e:
-            logger.error(f"Failed to create AdvNetworkMediaOpRx: {e}")
+            logger.error(f"Failed to create AdvNetworkMediaRxOp: {e}")
             sys.exit(1)
 
         # Check configuration for output type - only support visualization (no file writing)

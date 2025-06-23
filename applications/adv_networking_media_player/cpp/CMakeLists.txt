@@ -25,7 +25,7 @@ set(CMAKE_CUDA_ARCHITECTURES "70;80;90")
 
 # Create the executable
 add_executable(${PROJECT_NAME}
-  main.cpp
+  adv_networking_media_player.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}

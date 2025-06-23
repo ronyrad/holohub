@@ -287,7 +287,7 @@ class App : public holoscan::Application {
     }
 
     auto adv_net_media_rx =
-        make_operator<ops::AdvNetworkMediaOpRx>("advanced_network_media_rx",
+        make_operator<ops::AdvNetworkMediaRxOp>("advanced_network_media_rx",
                                                 from_config("advanced_network_media_rx"),
                                                 make_condition<BooleanCondition>("is_alive", true));
 
