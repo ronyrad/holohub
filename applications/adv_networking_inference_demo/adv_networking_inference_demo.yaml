@@ -1,0 +1,282 @@
+%YAML 1.2
+# SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+---
+# This is an example configuration for advanced networking inference demo
+# The processed video with body pose overlays can be displayed or transmitted based on output_type
+
+scheduler:
+  check_recession_period_ms: 0
+  worker_thread_number: 8
+  stop_on_deadlock: true
+  stop_on_deadlock_timeout: 500
+
+output_config:
+  output_type: "tx"        # Options: "visualization", "tx", "none"
+                                      # - "visualization": Windowed display at configured resolution
+                                      # - "tx": Headless network transmission at optimal resolution (1920x1080)
+                                      # - "none": No output (for testing/debugging)
+  
+  # Examples:
+  # output_type: "visualization"      # For local development and testing
+  # output_type: "tx"                 # For production deployment with network streaming
+  # output_type: "none"               # For headless testing or performance benchmarking
+
+advanced_network:
+  cfg:
+    version: 1
+    manager: "rivermax"
+    master_core: 6              # Master CPU core
+    debug: 1
+    log_level: "debug"
+
+    memory_regions:
+    - name: "Data_RX_CPU"
+      kind: "host"
+      affinity: 0
+      access:
+        - local
+      num_bufs: 43200
+      buf_size: 20
+    - name: "Data_RX_GPU"
+      kind: "device"
+      affinity: 0
+      access:
+        - local
+      num_bufs: 432000
+      buf_size: 1440
+    - name: "Data_TX_CPU"
+      kind: "host"
+      affinity: 0
+      num_bufs: 43200
+      buf_size: 20
+    - name: "Data_TX_GPU"
+      kind: "device"
+      affinity: 0
+      num_bufs: 43200
+      buf_size: 1440
+    interfaces:
+    - name: data1
+      address:  cc:00.1
+      rx:
+        queues:
+        - name: "Data"
+          id: 0
+          cpu_core:  "12"
+          batch_size: 4320
+          output_port: "bench_rx_out_1"
+          memory_regions: 
+          - "Data_RX_CPU"
+          - "Data_RX_GPU"
+          rivermax_rx_settings:
+            settings_type: "ipo_receiver"
+            memory_registration: true
+            #allocator_type: "huge_page_2mb"
+            verbose: true
+            max_path_diff_us: 10000
+            ext_seq_num: true
+            sleep_between_operations_us: 0
+            local_ip_addresses:
+              - 2.1.0.12
+            source_ip_addresses:
+              - 2.1.0.12
+            destination_ip_addresses:
+              - 224.1.1.2
+            destination_ports:
+              - 50001
+            stats_report_interval_ms: 3000
+            send_packet_ext_info: true
+      tx:
+        queues:
+        - name: "tx_q_1"
+          id: 0
+          cpu_core:  "13"
+          batch_size: 4320
+          output_port: "bench_tx_out_1"
+          memory_regions:
+          - "Data_TX_CPU"
+          - "Data_TX_GPU"
+          rivermax_tx_settings:
+            settings_type: "media_sender"
+            memory_registration: true
+            memory_allocation: true
+            memory_pool_location: "device"
+            #allocator_type: "huge_page_2mb"
+            verbose: true
+            sleep_between_operations: false
+            local_ip_address: 2.1.0.12
+            destination_ip_address: 224.1.1.3
+            destination_port: 50002
+            stats_report_interval_ms: 1000
+            send_packet_ext_info: true
+            num_of_packets_in_chunk: 144
+            video_format: RGB
+            bit_depth: 8
+            frame_width: 1920
+            frame_height: 1080
+            frame_rate: 25
+            dummy_sender: false
+
+advanced_network_media_rx:
+  interface_name: cc:00.1
+  queue_id: 0
+  video_format: RGB888
+  frame_width: 1920
+  frame_height: 1080
+  bit_depth: 8
+  hds: true
+  output_format: video_buffer
+  memory_location: device
+
+advanced_network_media_tx:
+  interface_name: cc:00.1
+  queue_id: 0
+  video_format: RGB888
+  frame_width: 1920
+  frame_height: 1080
+  bit_depth: 8
+
+preprocessor:
+  out_tensor_name: preprocessed
+  out_dtype: "float32"
+  resize_width: 640
+  resize_height: 640
+  scale_min: 0.0
+  scale_max: 1.0
+
+inference:
+  backend: "trt"
+  pre_processor_map:
+    "yolo_pose": ["preprocessed"]
+  inference_map:
+    "yolo_pose": ["inference_output"]
+  input_on_cuda: true
+  is_engine_path: false
+
+postprocessor:
+  iou_threshold: 0.5
+  score_threshold: 0.5
+  image_dim: 640
+
+# YAML anchor for common tensor configuration - define once, reference multiple times
+holoviz_common_tensors: &common_tensors
+  - name: ""
+    type: color
+  - name: boxes
+    type: rectangles
+    line_width: 4
+    color: [0.0, 1.0, 0.0, 1.0]
+    opacity: 0
+  - name: noses
+    type: points
+    color: [1.0, 0.0, 0.0, 1.0]
+    point_size: 10
+    opacity: 0
+  - name: left_eyes
+    type: points
+    color: [0.0, 1.0, 0.0, 1.0]
+    point_size: 10
+    opacity: 0
+  - name: right_eyes
+    type: points
+    color: [0.0, 1.0, 0.0, 1.0]
+    point_size: 10
+    opacity: 0
+  - name: left_ears
+    type: points
+    color: [0.0, 1.0, 0.0, 1.0]
+    point_size: 10
+    opacity: 0
+  - name: right_ears
+    type: points
+    color: [0.0, 1.0, 0.0, 1.0]
+    point_size: 10
+    opacity: 0
+  - name: left_shoulders
+    type: points
+    color: [0.0, 1.0, 0.0, 1.0]
+    point_size: 10
+    opacity: 0.5
+  - name: right_shoulders
+    type: points
+    color: [0.0, 1.0, 0.0, 1.0]
+    point_size: 10
+    opacity: 0.5
+  - name: left_elbows
+    type: points
+    color: [0.0, 1.0, 0.0, 1.0]
+    point_size: 10
+    opacity: 0.5
+  - name: right_elbows
+    type: points
+    color: [0.0, 1.0, 0.0, 1.0]
+    point_size: 10
+    opacity: 0.5
+  - name: left_wrists
+    type: points
+    color: [0.0, 1.0, 0.0, 1.0]
+    point_size: 10
+    opacity: 0.5
+  - name: right_wrists
+    type: points
+    color: [0.0, 1.0, 0.0, 1.0]
+    point_size: 10
+    opacity: 0.5
+  - name: left_hips
+    type: points
+    color: [0.0, 1.0, 0.0, 1.0]
+    point_size: 10
+    opacity: 0.5
+  - name: right_hips
+    type: points
+    color: [0.0, 1.0, 0.0, 1.0]
+    point_size: 10
+    opacity: 0.5
+  - name: left_knees
+    type: points
+    color: [0.0, 1.0, 0.0, 1.0]
+    point_size: 10
+    opacity: 0.5
+  - name: right_knees
+    type: points
+    color: [0.0, 1.0, 0.0, 1.0]
+    point_size: 10
+    opacity: 0.5
+  - name: left_ankles
+    type: points
+    color: [0.0, 1.0, 0.0, 1.0]
+    point_size: 10
+    opacity: 0.5
+  - name: right_ankles
+    type: points
+    color: [0.0, 1.0, 0.0, 1.0]
+    point_size: 10
+    opacity: 0.5
+  - name: segments
+    type: lines
+    color: [0.0, 1.0, 0.0, 1.0]
+    line_width: 4
+    opacity: 0.5
+
+holoviz:
+  width: 1920
+  height: 1080
+  tensors: *common_tensors
+
+# Configuration for TX-only mode (headless, high resolution)
+holoviz_tx_only:
+  headless: true
+  enable_render_buffer_output: true
+  tensors: *common_tensors
