@@ -31,7 +31,9 @@ from typing import Optional
 import utilities.cli.util as holohub_cli_util
 import utilities.metadata.gather_metadata as metadata_util
 from utilities.cli.container import HoloHubContainer, base_sdk_version
-from utilities.cli.util import Color
+from utilities.cli.util import Color, PackageInstallationError, parse_semantic_version
+
+PYTHON_MIN_VERSION = "3.9.0"
 
 
 class HoloHubCLI:
@@ -213,7 +215,14 @@ class HoloHubCLI:
             "--language", choices=["cpp", "python"], help="Specify language implementation"
         )
         run.add_argument(
-            "--run-args", help="Additional arguments to pass to the application executable"
+            "--build-type",
+            choices=["debug", "release", "rel-debug"],
+            help="Build type (debug, release, rel-debug)",
+        )
+        run.add_argument(
+            "--run-args",
+            help="Additional arguments to pass to the application executable, "
+            "example: --run-args=--flag or --run-args '-c config/file'",
         )
         run.add_argument(
             "--build-with",
@@ -222,6 +231,9 @@ class HoloHubCLI:
         )
         run.add_argument(
             "--parallel", help="Number of parallel build jobs (e.g. --parallel $(($(nproc)-1)))"
+        )
+        run.add_argument(
+            "--pkg-generator", default="DEB", help="Package generator for cpack (default: DEB)"
         )
         run.add_argument(
             "--no-local-build",
@@ -317,22 +329,22 @@ class HoloHubCLI:
         install.set_defaults(func=self.handle_install)
 
         # Add test command
-        test = subparsers.add_parser("test", help="Test a project")
+        test = subparsers.add_parser(
+            "test", help="Test a project", parents=[container_build_argparse]
+        )
         self.subparsers["test"] = test
         test.add_argument("project", nargs="?", help="Project to test")
-        test.add_argument("--base_img", help="Fully qualified base image name")
-        test.add_argument("--build_args", help="Additional options to pass to the Docker build")
         test.add_argument("--verbose", action="store_true", help="Print extra output")
         test.add_argument(
             "--dryrun", action="store_true", help="Print commands without executing them"
         )
-        test.add_argument("--clear_cache", action="store_true", help="Clear cache folders")
-        test.add_argument("--site_name", help="Site name")
-        test.add_argument("--cdash_url", help="CDash URL")
-        test.add_argument("--platform_name", help="Platform name")
-        test.add_argument("--cmake_options", help="CMake options")
-        test.add_argument("--no_xvfb", action="store_true", help="Do not use xvfb")
-        test.add_argument("--ctest_script", help="CTest script")
+        test.add_argument("--clear-cache", action="store_true", help="Clear cache folders")
+        test.add_argument("--site-name", help="Site name")
+        test.add_argument("--cdash-url", help="CDash URL")
+        test.add_argument("--platform-name", help="Platform name")
+        test.add_argument("--cmake-options", help="CMake options")
+        test.add_argument("--no-xvfb", action="store_true", help="Do not use xvfb")
+        test.add_argument("--ctest-script", help="CTest script")
         test.add_argument(
             "--no-docker-build", action="store_true", help="Skip building the container"
         )
@@ -504,7 +516,10 @@ class HoloHubCLI:
 
         if not skip_docker_build:
             container.build(
+                docker_file=args.docker_file,
                 base_img=args.base_img,
+                img=args.img,
+                no_cache=args.no_cache,
                 build_args=args.build_args,
             )
 
@@ -700,9 +715,13 @@ class HoloHubCLI:
                 for configure_arg in args.configure_args:
                     build_cmd += f' --configure-args "{configure_arg}"'
 
-            docker_opts = "--entrypoint=bash"
-            if hasattr(args, "docker_opts") and args.docker_opts:
-                docker_opts += " " + args.docker_opts
+            img = getattr(args, "img", None) or container.image_name
+            docker_opts = getattr(args, "docker_opts", "")
+            docker_opts_extra, extra_args = holohub_cli_util.get_entrypoint_command_args(
+                img, build_cmd, docker_opts, dry_run=args.dryrun
+            )
+            if docker_opts_extra:
+                docker_opts = f"{docker_opts} {docker_opts_extra}".strip()
             container.run(
                 img=getattr(args, "img", None),
                 local_sdk_root=getattr(args, "local_sdk_root", None),
@@ -716,7 +735,7 @@ class HoloHubCLI:
                 docker_opts=docker_opts,
                 add_volumes=getattr(args, "add_volume", None),
                 enable_mps=getattr(args, "mps", False),
-                extra_args=["-c", build_cmd],
+                extra_args=extra_args,
             )
 
     def handle_run(self, args: argparse.Namespace) -> None:
@@ -747,9 +766,10 @@ class HoloHubCLI:
                 build_dir, project_data = self.build_project_locally(
                     project_name=args.project,
                     language=args.language if hasattr(args, "language") else None,
-                    build_type="Release",  # Default to Release for run
+                    build_type=args.build_type or "Release",  # Default to Release for run
                     with_operators=args.with_operators,
                     dryrun=args.dryrun,
+                    pkg_generator=getattr(args, "pkg_generator", "DEB"),
                     parallel=getattr(args, "parallel", None),
                     configure_args=getattr(args, "configure_args", None),
                 )
@@ -886,6 +906,10 @@ class HoloHubCLI:
             run_cmd = f"{self.script_name} run {args.project} --language {language} --local"
             if args.verbose:
                 run_cmd += " --verbose"
+            if args.build_type:
+                run_cmd += f" --build-type {args.build_type}"
+            if getattr(args, "pkg_generator", None) and args.pkg_generator != "DEB":
+                run_cmd += f" --pkg-generator {args.pkg_generator}"
             if args.nsys_profile:
                 run_cmd += " --nsys-profile"
             if skip_local_build:
@@ -893,13 +917,20 @@ class HoloHubCLI:
             if hasattr(args, "with_operators") and args.with_operators:
                 run_cmd += f' --build-with "{args.with_operators}"'
             if hasattr(args, "run_args") and args.run_args:
-                run_cmd += f" --run-args {shlex.quote(args.run_args)}"
+                run_cmd += f" --run-args={shlex.quote(args.run_args)}"
             if getattr(args, "parallel", None):
                 run_cmd += f" --parallel {args.parallel}"
             if getattr(args, "configure_args", None):
                 for configure_arg in args.configure_args:
                     run_cmd += f' --configure-args "{configure_arg}"'
 
+            img = getattr(args, "img", None) or container.image_name
+            docker_opts = getattr(args, "docker_opts", "")
+            docker_opts_extra, extra_args = holohub_cli_util.get_entrypoint_command_args(
+                img, run_cmd, docker_opts, dry_run=args.dryrun
+            )
+            if docker_opts_extra:
+                docker_opts = f"{docker_opts} {docker_opts_extra}".strip()
             container.run(
                 img=getattr(args, "img", None),
                 local_sdk_root=getattr(args, "local_sdk_root", None),
@@ -910,10 +941,10 @@ class HoloHubCLI:
                 nsys_profile=getattr(args, "nsys_profile", False),
                 nsys_location=getattr(args, "nsys_location", ""),
                 as_root=getattr(args, "as_root", False),
-                docker_opts="--entrypoint=bash " + args.docker_opts,
+                docker_opts=docker_opts,
                 add_volumes=getattr(args, "add_volume", None),
                 enable_mps=getattr(args, "mps", False),
-                extra_args=["-c", run_cmd],
+                extra_args=extra_args,
             )
 
     def handle_list(self, args: argparse.Namespace) -> None:
@@ -1248,26 +1279,42 @@ class HoloHubCLI:
 
         # Install Python dev
         try:
-            python3_dev_version = subprocess.run(
-                ["dpkg", "--status", "python3-dev"],
+            python3_version = sys.version_info
+            python3_dev_output = subprocess.run(
+                ["dpkg", "--list", f"python3.{python3_version.minor}-dev"],
                 capture_output=True,
                 text=True,
                 check=False,
             ).stdout
-            version_match = re.search(r"Version: ([^-\s]+)", python3_dev_version)
+
+            # Look for the specific version first, then fall back to python3-dev
+            version_match = re.search(
+                rf"python3\.{python3_version.minor}-dev\s+(\d+\.\d+\.\d+)", python3_dev_output
+            )
+            if not version_match:
+                # Fall back to checking python3-dev
+                python3_dev_output = subprocess.run(
+                    ["dpkg", "--list", "python3-dev"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                ).stdout
+                version_match = re.search(r"python3-dev\s+(\d+\.\d+\.\d+)", python3_dev_output)
+
             python3_dev_version = version_match.group(1) if version_match else ""
         except subprocess.CalledProcessError:
             python3_dev_version = ""
 
-        if not python3_dev_version or "3.9.0" > python3_dev_version:
+        if not python3_dev_version or parse_semantic_version(
+            python3_dev_version
+        ) < parse_semantic_version(PYTHON_MIN_VERSION):
             holohub_cli_util.run_command(
                 [
                     "apt",
                     "install",
                     "--no-install-recommends",
                     "-y",
-                    "python3",
-                    "python3-dev",
+                    f"python3.{python3_version.minor}-dev",
                 ],
                 dry_run=args.dryrun,
             )
@@ -1331,80 +1378,30 @@ class HoloHubCLI:
             )
 
         # Install CUDA dependencies
-        cuda_version = ""
-        for version in [
-            "12-6",
-            "12-5",
-            "12-4",
-            "12-3",
-            "12-2",
-            "12-1",
-            "12-0",
-            "11-8",
-            "11-7",
-            "11-6",
-            "11-4",
-        ]:
-            try:
-                cuda_version = subprocess.check_output(
-                    ["dpkg", "--status", f"cuda-cudart-{version}"],
-                    text=True,
-                    stderr=subprocess.DEVNULL,
-                )
-                if cuda_version:
-                    break
-            except subprocess.CalledProcessError:
-                continue
-
-        if cuda_version:
-            short_cuda_version = cuda_version.split(".")[0]
-
-            # Install cudnn9 first
-            holohub_cli_util.install_cuda_dependencies_package(
-                "libcudnn9-cuda-12", "9.*", optional=True, dry_run=args.dryrun
-            )
-            holohub_cli_util.install_cuda_dependencies_package(
-                "libcudnn9-dev-cuda-12", "9.*", optional=True, dry_run=args.dryrun
-            )
-
-            # Check if cudnn9 is installed, if not install cudnn8
-            installed_cudnn9_version = subprocess.check_output(
-                ["apt", "list", "--installed", "libcudnn9-cuda-12"],
+        try:
+            # Search for dpkg table entry for CUDA Runtime package
+            # ii  cuda-cudart-12-3   12.3.101-1   amd64   CUDA Runtime native Libraries
+            dpkg_output = subprocess.check_output(
+                ["dpkg", "-l"],
                 text=True,
                 stderr=subprocess.DEVNULL,
             )
-            if not installed_cudnn9_version:
-                holohub_cli_util.install_cuda_dependencies_package(
-                    "libcudnn8", f"cuda{short_cuda_version}", dry_run=args.dryrun
+            cudart_entry = re.search(r"cuda-cudart-[0-9]+\-[0-9]+.*\n", dpkg_output)
+            if cudart_entry:
+                cuda_runtime_version = re.search(r"[0-9]+\.[0-9]+\.[0-9]+", cudart_entry.group(0))
+                cuda_runtime_version = (
+                    cuda_runtime_version.group(0) if cuda_runtime_version else None
                 )
-                holohub_cli_util.install_cuda_dependencies_package(
-                    "libcudnn8-dev", f"cuda{short_cuda_version}", dry_run=args.dryrun
-                )
-
-            # Install TensorRT dependencies
-            installed_libnvinferbin = subprocess.check_output(
-                ["dpkg", "--status", "libnvinfer-bin"], text=True, stderr=subprocess.DEVNULL
-            )
-            # Extract version string using regex
-            version_match = re.search(
-                r"Version: (\d+\.\d+\.\d+)\.\d+-\d+\+cuda\d+\.\d+", installed_libnvinferbin
-            )
-            if version_match:
-                installed_libnvinferbin_version = version_match.group(1)
             else:
-                holohub_cli_util.fatal("Could not determine libnvinfer-bin version")
+                cuda_runtime_version = None
+        except subprocess.CalledProcessError:
+            cuda_runtime_version = None
 
-            holohub_cli_util.install_cuda_dependencies_package(
-                "libnvinfer-headers-dev", installed_libnvinferbin_version, dry_run=args.dryrun
-            )
-            holohub_cli_util.install_cuda_dependencies_package(
-                "libnvinfer-dev", installed_libnvinferbin_version, dry_run=args.dryrun
-            )
-            holohub_cli_util.install_cuda_dependencies_package(
-                "libnvinfer-plugin-dev", installed_libnvinferbin_version, dry_run=args.dryrun
-            )
-            holohub_cli_util.install_cuda_dependencies_package(
-                "libnvonnxparsers-dev", installed_libnvinferbin_version, dry_run=args.dryrun
+        if cuda_runtime_version:
+            self._setup_cuda_packages(cuda_runtime_version.split(".")[0], args.dryrun)
+        else:
+            holohub_cli_util.info(
+                "CUDA Runtime package not found, skipping CUDA package installation"
             )
 
         # Install the autocomplete
@@ -1418,6 +1415,73 @@ class HoloHubCLI:
         )
 
         print(Color.green("Setup for HoloHub is ready. Happy Holocoding!"))
+
+    def _setup_cuda_packages(self, cuda_major_version: str, dryrun: bool = False) -> None:
+        """Find and install CUDA packages for Holoscan SDK development"""
+
+        # Attempt to install cudnn9
+        # cuDNN version example: libcudnn9-cuda-12/unknown,now 9.10.2.21-1 amd64
+        CUDNN_9_PATTERN = r"9\.[0-9]+\.[0-9]+\.[0-9]+\-[0-9]+"
+        try:
+            installed_cudnn9_version = holohub_cli_util.install_cuda_dependencies_package(
+                package_name="libcudnn9-cuda-12",
+                version_pattern=CUDNN_9_PATTERN,
+                dry_run=dryrun,
+            )
+            holohub_cli_util.install_cuda_dependencies_package(
+                package_name="libcudnn9-dev-cuda-12",
+                version_pattern=re.escape(installed_cudnn9_version),
+                dry_run=dryrun,
+            )
+        except PackageInstallationError as e:
+            holohub_cli_util.info(f"cuDNN 9.x installation failed, falling back to cuDNN 8.x: {e}")
+            try:
+                # Fall back to cudnn8
+                # cuDNN version example: libcudnn8/unknown 8.9.7.29-1+cuda12.2 amd64
+                CUDNN_8_PATTERN = (
+                    rf"8\.[0-9]+\.[0-9]+\.[0-9]+\-[0-9]\+cuda{cuda_major_version}\.[0-9]+"
+                )
+                installed_cudnn8_version = holohub_cli_util.install_cuda_dependencies_package(
+                    package_name="libcudnn8",
+                    version_pattern=CUDNN_8_PATTERN,
+                    dry_run=dryrun,
+                )
+                holohub_cli_util.install_cuda_dependencies_package(
+                    package_name="libcudnn8-dev",
+                    version_pattern=re.escape(installed_cudnn8_version),
+                    dry_run=dryrun,
+                )
+            except PackageInstallationError as e:
+                holohub_cli_util.info(f"cuDNN 8.x installation failed: {e}.")
+                holohub_cli_util.info("cuDNN packages may need to be installed manually.")
+
+        # Install TensorRT dependencies
+        # TensorRT version example: libnvinfer-bin/unknown,now 10.12.0.36-1+cuda12.9 amd64
+        NVINFER_PATTERN = rf"\d+\.[0-9]+\.[0-9]+\.[0-9]+-[0-9]\+cuda{cuda_major_version}\.[0-9]+"
+        try:
+            installed_libnvinferbin_version = holohub_cli_util.install_cuda_dependencies_package(
+                package_name="libnvinfer-bin",
+                version_pattern=NVINFER_PATTERN,
+                dry_run=dryrun,
+            )
+            libnvinfer_pattern = re.escape(installed_libnvinferbin_version)
+
+            for trt_package_name in [
+                "libnvinfer-headers-dev",
+                "libnvinfer-dev",
+                "libnvinfer-plugin-dev",
+                "libnvonnxparsers-dev",
+            ]:
+                holohub_cli_util.install_cuda_dependencies_package(
+                    package_name=trt_package_name,
+                    version_pattern=libnvinfer_pattern,
+                    dry_run=dryrun,
+                )
+        except PackageInstallationError as e:
+            holohub_cli_util.info(f"TensorRT installation failed: {e}")
+            holohub_cli_util.info(
+                "Continuing with setup - TensorRT packages may need to be installed manually"
+            )
 
     def handle_env_info(self, args: argparse.Namespace) -> None:
         """Handle env-info command to collect debugging information"""
@@ -1488,9 +1552,13 @@ class HoloHubCLI:
                 for configure_arg in args.configure_args:
                     install_cmd += f' --configure-args "{configure_arg}"'
 
-            docker_opts = "--entrypoint=bash"
-            if hasattr(args, "docker_opts") and args.docker_opts:
-                docker_opts += " " + args.docker_opts
+            img = getattr(args, "img", None) or container.image_name
+            docker_opts = getattr(args, "docker_opts", "")
+            docker_opts_extra, extra_args = holohub_cli_util.get_entrypoint_command_args(
+                img, install_cmd, docker_opts, dry_run=args.dryrun
+            )
+            if docker_opts_extra:
+                docker_opts = f"{docker_opts} {docker_opts_extra}".strip()
             container.run(
                 img=getattr(args, "img", None),
                 local_sdk_root=getattr(args, "local_sdk_root", None),
@@ -1504,7 +1572,7 @@ class HoloHubCLI:
                 docker_opts=docker_opts,
                 add_volumes=getattr(args, "add_volume", None),
                 enable_mps=getattr(args, "mps", False),
-                extra_args=["-c", install_cmd],
+                extra_args=extra_args,
             )
 
     def handle_clear_cache(self, args: argparse.Namespace) -> None:
@@ -1571,7 +1639,8 @@ class HoloHubCLI:
         devcontainer_env_options = container.get_devcontainer_args(
             docker_opts=getattr(args, "docker_opts", None) or ""
         )
-        holohub_cli_util.run_command(["xhost", "+local:docker"], check=False, dry_run=args.dryrun)
+        # Enable X11 access for Docker containers
+        container.enable_x11_access()
 
         devcontainer_content = holohub_cli_util.get_devcontainer_config(
             holohub_root=self.HOLOHUB_ROOT, project_name=args.project, dry_run=args.dryrun

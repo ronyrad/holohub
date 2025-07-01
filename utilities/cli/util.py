@@ -15,9 +15,11 @@
 # limitations under the License.
 
 import grp
+import json
 import os
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -172,6 +174,20 @@ def run_info_command(cmd: List[str]) -> Optional[str]:
         return None
 
 
+def parse_semantic_version(version: str) -> Tuple[int, int, int]:
+    """
+    Parse semantic version string MAJOR.MINOR.PATCH into tuple of integers for comparison
+
+    Note: Implementing our own version parsing to avoid dependency on PyPI 'packaging' module.
+
+    ref: https://semver.org/
+    """
+    match = re.match(r"^(\d+\.\d+\.\d+).*", version.strip())
+    if not match:
+        raise ValueError(f"Failed to parse semantic version string: {version}")
+    return tuple(map(int, match.group(1).split(".")))
+
+
 def check_nvidia_ctk(min_version: str = "1.12.0", recommended_version: str = "1.14.1") -> None:
     """Check NVIDIA Container Toolkit version"""
 
@@ -180,25 +196,15 @@ def check_nvidia_ctk(min_version: str = "1.12.0", recommended_version: str = "1.
 
     try:
         output = subprocess.check_output(["nvidia-ctk", "--version"], text=True)
-        import re
-
         match = re.search(r"(\d+\.\d+\.\d+)", output)
         if match:
             version = match.group(1)
-
             try:
-                from packaging import version as ver
-
-                version_check = ver.parse(version) < ver.parse(min_version)
-            except ImportError:
-
-                def parse_version(v):
-                    try:
-                        return tuple(map(int, v.split(".")))
-                    except ValueError:
-                        return (10, 0, 0)
-
-                version_check = parse_version(version) < parse_version(min_version)
+                version_check = parse_semantic_version(version) < parse_semantic_version(
+                    min_version
+                )
+            except ValueError:
+                version_check = False
 
             if version_check:
                 fatal(
@@ -302,63 +308,80 @@ def list_metadata_json_dir(*paths: Path) -> List[Tuple[str, str]]:
     return sorted(results)
 
 
+class PackageInstallationError(Exception):
+    """Raised when a package cannot be installed via apt"""
+
+    def __init__(self, package_name: str, version_pattern: str, message: str = None):
+        self.package_name = package_name
+        self.version_pattern = version_pattern
+        super().__init__(
+            message or f"Failed to install package {package_name} matching {version_pattern}"
+        )
+
+
 def install_cuda_dependencies_package(
-    package_name: str, preferred_version: str, optional: bool = False, dry_run: bool = False
-) -> bool:
+    package_name: str,
+    version_pattern: str = r"\d+\.\d+\.\d+",
+    dry_run: bool = False,
+) -> str:
     """Install CUDA dependencies package with version checking
+
+    Procedure:
+    1. If package is already installed, return the version
+    2. If the package is not installed and the preferred version is available, install it and return the version.
+    3. If the package is not installed and the preferred version is not available, throw.
 
     Args:
         package_name: Name of the package to install
-        preferred_version: Preferred version string to match
-        optional: Whether the package is optional (default: False)
+        version_pattern: Regular expression for package version to get if not already installed.
+            The latest version matching the pattern will be installed.
 
     Returns:
-        bool: True if package was installed or already present, False if optional package was skipped
+        str: Installed package version
 
     Raises:
-        SystemExit: If non-optional package cannot be installed
+        PackageInstallationError: If package cannot be installed
     """
+
     # Check if package is already installed
     try:
         output = subprocess.check_output(
             ["apt", "list", "--installed", package_name], text=True, stderr=subprocess.DEVNULL
-        )
+        ).split()
         # Extract installed version from apt list output using regex
         # Example output: "libcudnn9-cuda-12/unknown,now 9.5.1.17-1 amd64 [installed,upgradable to: 9.8.0.87-1]"
-        installed_version = re.search(rf"{package_name}/.*?now\s+([\d\.-]+)", output)
-        if installed_version:
-            installed_version = installed_version.group(1)
-            print(f"Package {package_name} found with version {installed_version}")
-            return True
+        if len(output) >= 3 and re.match(r"\d+\.\d+\.\d+.*", output[2]):
+            installed_version = output[2]
+            info(f"Package {package_name} found with version {installed_version}")
+            return installed_version
     except subprocess.CalledProcessError:
+        # Package not installed, continue to attempt installation
         pass
 
     # Check available versions
     try:
+        # apt list -a sorts in descending order by default
         available_versions = subprocess.check_output(
             ["apt", "list", "-a", package_name], text=True, stderr=subprocess.DEVNULL
         )
-
-        # Find matching version
-        matching_version = None
-        for line in available_versions.splitlines():
-            if preferred_version in line and package_name in line:
-                matching_version = line.split()[1]  # Get version from second column
-                break
+        matching_version = re.findall(
+            f"^{re.escape(package_name)}/.*?({version_pattern}).*$",
+            available_versions,
+            re.MULTILINE,
+        )
+        matching_version = matching_version[0] if matching_version else None
 
         if not matching_version:
-            if optional:
-                print(f"Package {package_name} {preferred_version} not found. Skipping.")
-                return False
-            else:
-                fatal(
-                    f"{package_name} {preferred_version} is not installable.\n"
-                    f"You might want to try to install a newer version manually and rerun the setup:\n"
-                    f"  sudo apt install {package_name}"
-                )
+            raise PackageInstallationError(
+                package_name,
+                version_pattern,
+                f"{package_name} is not installable with pattern {version_pattern}.\n"
+                f"You might want to try to install a newer version manually and rerun the setup:\n"
+                f"  sudo apt install {package_name}",
+            )
 
         # Install the package
-        print(f"Installing {package_name}={matching_version}")
+        info(f"Installing {package_name}={matching_version}")
         run_command(
             [
                 "apt",
@@ -369,14 +392,14 @@ def install_cuda_dependencies_package(
             ],
             dry_run=dry_run,
         )
-        return True
+        return matching_version
 
     except subprocess.CalledProcessError as e:
-        if optional:
-            print(f"Error checking available versions for {package_name}: {e}")
-            return False
-        else:
-            fatal(f"Error checking available versions for {package_name}: {e}")
+        raise PackageInstallationError(
+            package_name,
+            version_pattern,
+            f"Error checking available versions for {package_name}: {e}",
+        )
 
 
 def format_long_command(cmd: List[str], max_line_length: int = 80) -> str:
@@ -542,23 +565,76 @@ def docker_args_to_devcontainer_format(docker_args: List[str]) -> List[str]:
     return result
 
 
+def get_entrypoint_command_args(
+    img: str, command: str, docker_opts: str, dry_run: bool = False
+) -> tuple[str, List[str]]:
+    """Determine how to execute a shell command in a Docker container."""
+    if "--entrypoint" in docker_opts:
+        try:
+            command_args = shlex.split(command)  # "command" splits into a list of arguments
+            return "", command_args
+        except ValueError:
+            return "", [command]
+    entrypoint = get_container_entrypoint(img, dry_run=dry_run)
+    if not entrypoint:  # image has no entrypoint, docker uses default "/bin/sh -c" for command
+        return "", [command]
+    # Image has an ENTRYPOINT
+    if entrypoint in [["/bin/sh", "-c"], ["/bin/bash", "-c"], ["sh", "-c"], ["bash", "-c"]]:
+        return "", [command]  # Shell is already configured to take command string
+    if entrypoint in [["/bin/sh"], ["/bin/bash"], ["sh"], ["bash"]]:
+        return "", ["-c", command]  # Shell needs -c to execute command string
+    return "--entrypoint=bash", ["-c", command]  # bash is used to run local build/run command
+
+
+def get_container_entrypoint(img: str, dry_run: bool = False) -> Optional[List[str]]:
+    """Check if container image has an entrypoint defined"""
+    if dry_run:
+        print(
+            "Inspect docker image entrypoint: "
+            f"docker inspect --format={{{{json .Config.Entrypoint}}}} {img}"
+        )
+        return None
+
+    try:
+        result = run_command(
+            ["docker", "inspect", "--format={{json .Config.Entrypoint}}", img],
+            capture_output=True,
+            check=False,
+            dry_run=dry_run,
+        )
+        if result.returncode != 0:
+            return None
+        entrypoint_json = result.stdout.strip()
+        if entrypoint_json in ["<no value>", "[]", "null", "''"]:
+            return None
+        parsed = json.loads(entrypoint_json)
+        if isinstance(parsed, list) and len(parsed) > 0:
+            return parsed
+        return None
+    except Exception:
+        pass
+    return None
+
+
 def get_image_pythonpath(img: str, dry_run: bool = False) -> str:
     """Get PYTHONPATH from the Docker image environment"""
-    try:
-        if dry_run:
-            print(
-                Color.yellow(
-                    f"Inspect docker image PYTHONPATH: docker inspect "
-                    f"--format '{{{{range .Config.Env}}}}{{{{println .}}}}{{{{end}}}}' {img}"
-                )
+    if dry_run:
+        print(
+            Color.yellow(
+                "Inspect docker image PYTHONPATH: docker inspect "
+                f"--format '{{{{range .Config.Env}}}}{{{{println .}}}}{{{{end}}}}' {img}"
             )
-            return ""
+        )
+        return ""
+    try:
         result = run_command(
             ["docker", "inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", img],
-            check=True,
+            check=False,
             capture_output=True,
             dry_run=dry_run,
         )
+        if result.returncode != 0:
+            return ""
         for line in result.stdout.decode().strip().split("\n"):
             if line.startswith("PYTHONPATH="):
                 return line[len("PYTHONPATH=") :]
