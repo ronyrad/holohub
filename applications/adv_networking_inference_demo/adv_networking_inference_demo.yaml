@@ -49,7 +49,7 @@ advanced_network:
 
     memory_regions:
     - name: "Data_RX_CPU"
-      kind: "host"
+      kind: "huge"
       affinity: 0
       access:
         - local
@@ -63,7 +63,7 @@ advanced_network:
       num_bufs: 432000
       buf_size: 1440
     - name: "Data_TX_CPU"
-      kind: "host"
+      kind: "huge"
       affinity: 0
       num_bufs: 43200
       buf_size: 20
@@ -107,7 +107,7 @@ advanced_network:
         queues:
         - name: "tx_q_1"
           id: 0
-          cpu_core:  "13"
+          cpu_core:  "14"
           batch_size: 4320
           output_port: "bench_tx_out_1"
           memory_regions:
@@ -142,7 +142,7 @@ advanced_network_media_rx:
   frame_height: 1080
   bit_depth: 8
   hds: true
-  output_format: video_buffer
+  output_format: tensor
   memory_location: device
 
 advanced_network_media_tx:
@@ -168,7 +168,9 @@ inference:
   inference_map:
     "yolo_pose": ["inference_output"]
   input_on_cuda: true
+  infer_on_cpu: false
   is_engine_path: false
+  enable_fp16: true
 
 postprocessor:
   iou_threshold: 0.5
@@ -276,8 +278,8 @@ holoviz_common_tensors: &common_tensors
     opacity: 0.5
 
 holoviz:
-  width: 1920
-  height: 1080
+  width: 1280
+  height: 720
   tensors: *common_tensors
 
 # Configuration for TX-only mode (headless, high resolution)
