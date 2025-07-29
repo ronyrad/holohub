@@ -468,11 +468,27 @@ class AdvNetworkingInferenceApp(Application):
             )
             logger.warning("This mode is intended for testing/debugging only.")
 
+        # Check inference configuration
+        enable_inference = True  # Default: inference enabled
+        try:
+            inference_config = self.kwargs("inference_config")
+            skip_inference = inference_config.get("skip_inference", False)
+            enable_inference = not skip_inference  # Convert to positive logic
+            logger.info(f"Inference pipeline: {'ENABLED' if enable_inference else 'DISABLED'}")
+        except Exception:
+            logger.info("No inference_config found, using default: inference enabled")
+
+        # Log inference bypass mode
+        if not enable_inference:
+            logger.info(
+                "INFERENCE BYPASS MODE: Skipping inference pipeline - only raw frames will be processed"
+            )
+
         # Derive boolean flags for backward compatibility with existing logic
         enable_tx_output = output_type == "tx"
         enable_visualization = output_type == "visualization"
         logger.info(
-            f"Derived flags - TX: {enable_tx_output}, Visualization: {enable_visualization}"
+            f"Pipeline flags - TX: {enable_tx_output}, Visualization: {enable_visualization}, Inference: {enable_inference}"
         )
 
         # Check RX/TX enabled status
@@ -506,60 +522,69 @@ class AdvNetworkingInferenceApp(Application):
             logger.error(f"Failed to create AdvNetworkMediaRxOp: {e}")
             sys.exit(1)
 
-        # 2. Preprocessor - prepares data for inference (no input format conversion needed)
-        logger.info("Creating preprocessor...")
-        preprocessor_args = self.kwargs("preprocessor").copy()
+        # Inference pipeline operators (only create if inference is enabled)
+        preprocessor = None
+        format_input = None
+        inference = None
+        postprocessor = None
 
-        # With fixed RX operator, use RGB888 as input format
-        in_dtype = "rgb888"
+        if enable_inference:
+            # 2. Preprocessor - prepares data for inference (no input format conversion needed)
+            logger.info("Creating preprocessor...")
+            preprocessor_args = self.kwargs("preprocessor").copy()
 
-        # RX operator outputs tensor with default name, preprocessor expects default input
-        preprocessor_args["in_tensor_name"] = ""
-        preprocessor_args["out_tensor_name"] = "preprocessed"
+            # With fixed RX operator, use RGB888 as input format
+            in_dtype = "rgb888"
 
-        preprocessor = FormatConverterOp(
-            self,
-            name="preprocessor",
-            pool=allocator,
-            cuda_stream_pool=cuda_stream_pool,
-            in_dtype=in_dtype,
-            **preprocessor_args,
-        )
+            # RX operator outputs tensor with default name, preprocessor expects default input
+            preprocessor_args["in_tensor_name"] = ""
+            preprocessor_args["out_tensor_name"] = "preprocessed"
 
-        # 3. Format inference input operator - transposes tensor for inference
-        logger.info("Creating format inference input operator...")
-        format_input = FormatInferenceInputOp(
-            self,
-            name="transpose",
-            allocator=allocator,
-        )
+            preprocessor = FormatConverterOp(
+                self,
+                name="preprocessor",
+                pool=allocator,
+                cuda_stream_pool=cuda_stream_pool,
+                in_dtype=in_dtype,
+                **preprocessor_args,
+            )
 
-        # 4. Inference operator - runs YOLO pose detection
-        logger.info("Creating inference operator...")
-        inference_args = self.kwargs("inference")
-        inference_args["model_path_map"] = {
-            "yolo_pose": os.path.join(self.sample_data_path, "yolo11l-pose.onnx")
-        }
-        inference = InferenceOp(
-            self,
-            name="inference",
-            allocator=allocator,
-            **inference_args,
-        )
+            # 3. Format inference input operator - transposes tensor for inference
+            logger.info("Creating format inference input operator...")
+            format_input = FormatInferenceInputOp(
+                self,
+                name="transpose",
+                allocator=allocator,
+            )
 
-        # 5. Postprocessor - processes inference results
-        logger.info("Creating postprocessor...")
-        postprocessor_args = self.kwargs("postprocessor")
-        # PostprocessorOp expects image_dim parameter (single value for square input)
-        postprocessor_args["image_dim"] = preprocessor_args[
-            "resize_width"
-        ]  # Use width (should be same as height for square input)
-        postprocessor = PostprocessorOp(
-            self,
-            name="postprocessor",
-            allocator=allocator,
-            **postprocessor_args,
-        )
+            # 4. Inference operator - runs YOLO pose detection
+            logger.info("Creating inference operator...")
+            inference_args = self.kwargs("inference")
+            inference_args["model_path_map"] = {
+                "yolo_pose": os.path.join(self.sample_data_path, "yolo11l-pose.onnx")
+            }
+            inference = InferenceOp(
+                self,
+                name="inference",
+                allocator=allocator,
+                **inference_args,
+            )
+
+            # 5. Postprocessor - processes inference results
+            logger.info("Creating postprocessor...")
+            postprocessor_args = self.kwargs("postprocessor")
+            # PostprocessorOp expects image_dim parameter (single value for square input)
+            postprocessor_args["image_dim"] = preprocessor_args[
+                "resize_width"
+            ]  # Use width (should be same as height for square input)
+            postprocessor = PostprocessorOp(
+                self,
+                name="postprocessor",
+                allocator=allocator,
+                **postprocessor_args,
+            )
+        else:
+            logger.info("Skipping inference pipeline creation (debug mode)")
 
         # 6. HolovizOp - visualization and rendering
         logger.info("Creating HolovizOp...")
@@ -597,6 +622,12 @@ class AdvNetworkingInferenceApp(Application):
             logger.info("Skipping HolovizOp creation (output_type is 'none')")
 
         if holoviz_args:
+            # Modify tensors for inference bypass mode
+            if not enable_inference:
+                # Simplify tensors - only show the raw image
+                holoviz_args["tensors"] = [{"name": "", "type": "color"}]
+                logger.info("HolovizOp: Configured for raw frames only (inference bypassed)")
+
             holoviz = HolovizOp(self, allocator=allocator, name="holoviz", **holoviz_args)
             logger.info("Created HolovizOp with appropriate configuration")
 
@@ -645,25 +676,27 @@ class AdvNetworkingInferenceApp(Application):
             self.add_flow(adv_net_media_rx, holoviz, {("out_video_buffer", "receivers")})
             logger.info("Connected RX operator to HolovizOp for background image")
 
-        # Network RX -> Preprocessor (for inference pipeline)
-        self.add_flow(adv_net_media_rx, preprocessor, {("out_video_buffer", "")})
-        logger.info("Connected RX operator to preprocessor for inference pipeline")
+        # Inference pipeline connections (only if inference is enabled)
+        if enable_inference and preprocessor and format_input and inference and postprocessor:
+            # Network RX -> Preprocessor (for inference pipeline)
+            self.add_flow(adv_net_media_rx, preprocessor, {("out_video_buffer", "")})
+            logger.info("Connected RX operator to preprocessor for inference pipeline")
 
-        # Common inference pipeline connections
-        self.add_flow(
-            preprocessor, format_input, {("tensor", "in")}
-        )  # preprocessor outputs via "tensor" port
-        self.add_flow(
-            format_input, inference, {("out", "receivers")}
-        )  # format_input outputs via "out" port
-        self.add_flow(inference, postprocessor, {("transmitter", "in")})
+            # Common inference pipeline connections
+            self.add_flow(
+                preprocessor, format_input, {("tensor", "in")}
+            )  # preprocessor outputs via "tensor" port
+            self.add_flow(
+                format_input, inference, {("out", "receivers")}
+            )  # format_input outputs via "out" port
+            self.add_flow(inference, postprocessor, {("transmitter", "in")})
 
-        # Connect postprocessor to HolovizOp for pose overlay (if HolovizOp exists)
-        if holoviz:
-            self.add_flow(postprocessor, holoviz, {("out", "receivers")})
-            logger.info("Connected inference pipeline to HolovizOp for pose overlay")
+            # Connect postprocessor to HolovizOp for pose overlay (if HolovizOp exists)
+            if holoviz:
+                self.add_flow(postprocessor, holoviz, {("out", "receivers")})
+                logger.info("Connected inference pipeline to HolovizOp for pose overlay")
         else:
-            logger.info("No HolovizOp - inference results will not be visualized")
+            logger.info("Skipping inference pipeline connections (debug mode)")
 
         # TX output pipeline connections (if TX mode is enabled)
         if output_type == "tx" and tx_operator and tx_format_converter and holoviz:
@@ -674,9 +707,14 @@ class AdvNetworkingInferenceApp(Application):
             )
 
         # Log final pipeline configuration
-        logger.info(
-            f"Pipeline configured for output_type: '{output_type}' with direct RX connections"
-        )
+        if not enable_inference:
+            logger.info(
+                f"Pipeline configured with inference bypass: Raw frames only (RX -> HolovizOp -> {output_type})"
+            )
+        else:
+            logger.info(
+                f"Pipeline configured for output_type: '{output_type}' with full inference pipeline"
+            )
 
         # Set up scheduler
         try:

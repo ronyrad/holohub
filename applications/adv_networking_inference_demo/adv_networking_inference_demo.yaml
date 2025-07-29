@@ -34,6 +34,11 @@ output_config:
   # output_type: "tx"                 # For production deployment with network streaming
   # output_type: "none"               # For headless testing or performance benchmarking
 
+# Inference pipeline control
+inference_config:
+  skip_inference: false     # Set to true to bypass the entire inference pipeline for debugging
+                           # When true, raw frames go directly to output without AI processing
+                           # Useful for network connectivity testing and performance debugging
 advanced_network:
   cfg:
     version: 1
