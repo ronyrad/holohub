@@ -72,7 +72,7 @@ void ContiguousStrategy::process_packet(PacketsToFramesConverter& converter, uin
 
   bool is_contiguous_memory = current_payload_start_ptr_ + accumulated_contiguous_size_ == payload;
   if (!is_contiguous_memory) {
-    PACKET_TRACE_LOG("ContiguousStrategy: Stride break detected, copying {} bytes",
+    PACKET_TRACE_LOG("ContiguousStrategy: Memory contiguity break detected, copying {} bytes",
                      accumulated_contiguous_size_);
     // Execute copy for previous accumulated batch (this will advance frame position)
     execute_copy(converter);
@@ -82,26 +82,19 @@ void ContiguousStrategy::process_packet(PacketsToFramesConverter& converter, uin
     accumulated_contiguous_size_ = 0;
   }
 
-  // CRITICAL FIX: Check if adding this packet would exceed frame boundaries
-  // This prevents accumulation across multiple frames
-  auto frame = converter.get_destination_frame_buffer();
-  size_t frame_remaining = frame->get_size() - converter.get_frame_position();
-  size_t new_total_size = accumulated_contiguous_size_ + payload_size;
-
-  if (new_total_size > frame_remaining && accumulated_contiguous_size_ > 0) {
-    PACKET_TRACE_LOG(
-        "ContiguousStrategy: Frame boundary detected, executing copy of {} bytes before adding new "
-        "packet",
-        accumulated_contiguous_size_);
-    // Execute copy for current accumulated data to avoid frame overflow
-    execute_copy(converter);
-
-    // Start new accumulation with current packet
-    current_payload_start_ptr_ = payload;
-    accumulated_contiguous_size_ = 0;
-  }
-
   accumulated_contiguous_size_ += payload_size;
+
+  // Safety check: If accumulated size exceeds frame size, we've likely crossed frame boundaries
+  // This should not happen in normal operation, but provides a safety net
+  auto frame = converter.get_destination_frame_buffer();
+  if (accumulated_contiguous_size_ > frame->get_size()) {
+    HOLOSCAN_LOG_WARN(
+        "ContiguousStrategy: Accumulated size ({} bytes) exceeds frame size ({} bytes). "
+        "This indicates data accumulation across frame boundaries. Executing immediate copy.",
+        accumulated_contiguous_size_,
+        frame->get_size());
+    execute_copy(converter);
+  }
 }
 
 void ContiguousStrategy::execute_copy(PacketsToFramesConverter& converter) {
@@ -134,10 +127,12 @@ void ContiguousStrategy::execute_copy(PacketsToFramesConverter& converter) {
   if (dst_offset + accumulated_contiguous_size_ > frame_size) {
     HOLOSCAN_LOG_ERROR(
         "ERROR: Copy would exceed frame bounds! dst_offset={}, copy_size={}, frame_size={}. "
-        "Skipping copy operation.",
+        "Resetting accumulation state to prevent corruption.",
         dst_offset,
         accumulated_contiguous_size_,
         frame_size);
+    // Reset accumulation state even when copy fails to prevent corruption
+    reset_state();
     return;
   }
 
@@ -152,8 +147,7 @@ void ContiguousStrategy::execute_copy(PacketsToFramesConverter& converter) {
                    accumulated_contiguous_size_);
 
   // Reset accumulation state for next batch
-  current_payload_start_ptr_ = nullptr;
-  accumulated_contiguous_size_ = 0;
+  reset_state();
 }
 
 void ContiguousStrategy::reset_state() {
@@ -687,19 +681,10 @@ void PacketsToFramesConverter::process_incoming_packet(const RtpParams& rtp_para
         rtp_params.payload_size,
         current_byte_in_frame_);
 
-    // CRITICAL: Execute any pending copy operations from previous packets FIRST
-    // This ensures we don't mix data from multiple frames in the same copy operation
-    if (current_strategy_ && current_strategy_->has_pending_copy()) {
-      PACKET_TRACE_LOG(
-          "Executing pending copy operations before processing M-bit packet (frame_pos={})",
-          current_byte_in_frame_);
-      current_strategy_->execute_copy(*this);
-      PACKET_TRACE_LOG("Pending copy completed, frame_pos now={}", current_byte_in_frame_);
-    }
-
-    // Now process the final packet data for this frame
+    // Process the final packet data first to include it in accumulated batch
     current_strategy_->process_packet(*this, payload, rtp_params.payload_size);
-    // Then handle end of frame
+    
+    // Then execute single copy operation for all accumulated data (including M-bit packet)
     handle_end_of_frame();
     return;
   }
@@ -748,7 +733,8 @@ std::pair<bool, std::string> PacketsToFramesConverter::validate_packet_integrity
     return {true, "Frame received is not aligned to the frame size and will be dropped"};
   }
 
-  bool frame_full = bytes_left <= 0;
+  bool frame_full = (bytes_left == 0);
+
   if (frame_full && !rtp_params.m_bit) {
     return {true, "Frame is full but marker was not not appear"};
   }

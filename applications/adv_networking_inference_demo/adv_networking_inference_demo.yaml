@@ -24,7 +24,7 @@ scheduler:
   stop_on_deadlock_timeout: 500
 
 output_config:
-  output_type: "tx"        # Options: "visualization", "tx", "none"
+  output_type: "visualization"        # Options: "visualization", "tx", "none"
                                       # - "visualization": Windowed display at configured resolution
                                       # - "tx": Headless network transmission at optimal resolution (1920x1080)
                                       # - "none": No output (for testing/debugging)
@@ -39,13 +39,14 @@ inference_config:
   skip_inference: false     # Set to true to bypass the entire inference pipeline for debugging
                            # When true, raw frames go directly to output without AI processing
                            # Useful for network connectivity testing and performance debugging
+
 advanced_network:
   cfg:
     version: 1
     manager: "rivermax"
-    master_core: 6              # Master CPU core
+    master_core: 10              # Master CPU core
     debug: 1
-    log_level: "debug"
+    log_level: "error"
 
     memory_regions:
     - name: "Data_RX_CPU"
@@ -131,7 +132,7 @@ advanced_network:
             bit_depth: 8
             frame_width: 1920
             frame_height: 1080
-            frame_rate: 25
+            frame_rate: 60
             dummy_sender: false
 
 advanced_network_media_rx:

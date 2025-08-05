@@ -58,14 +58,13 @@ set(RIVERMAX_DEV_KIT_REPO_URL "https://github.com/NVIDIA/rivermax-dev-kit.git" C
 
 # Clear and set with FORCE to prevent overrides
 unset(RIVERMAX_DEV_KIT_TAG CACHE)
-set(RIVERMAX_DEV_KIT_TAG "361dc89aba79678edeab4e399c9b10a4acc8d0da" CACHE STRING "Git tag, branch or branch hash to use for rivermax-dev-kit" FORCE)
+set(RIVERMAX_DEV_KIT_TAG "ef340f769869d75080f63f91a0a1d7e36ccc4688" CACHE STRING "Git tag, branch or branch hash to use for rivermax-dev-kit" FORCE)
 message(STATUS "Using Rivermax Hash: ${RIVERMAX_DEV_KIT_TAG}")
 
 FetchContent_Declare(
     rivermax-dev-kit
     GIT_REPOSITORY ${RIVERMAX_DEV_KIT_REPO_URL}
     GIT_TAG ${RIVERMAX_DEV_KIT_TAG}
-    GIT_SHALLOW TRUE
     GIT_PROGRESS TRUE
 )
 
@@ -73,7 +72,15 @@ FetchContent_MakeAvailable(rivermax-dev-kit)
 
 # Link external RDK libraries through INTERFACE
 target_link_libraries(${PROJECT_NAME} INTERFACE
-    rmax_ipo_receiver_lib
-    rmax_xstream_media_sender_lib
-    rmax_rtp_receiver_lib
+#    rmax_ipo_receiver_lib
+#    rmax_xstream_media_sender_lib
+#    rmax_rtp_receiver_lib
+    rivermax-dev-kit-app-base
+    rivermax-dev-kit
+)
+# Add object libraries to get the actual implementations
+target_sources(${PROJECT_NAME} INTERFACE
+    $<TARGET_OBJECTS:rmax_rtp_receiver_obj>
+    $<TARGET_OBJECTS:rmax_ipo_receiver_obj>
+    $<TARGET_OBJECTS:rmax_xstream_media_sender_obj>
 )

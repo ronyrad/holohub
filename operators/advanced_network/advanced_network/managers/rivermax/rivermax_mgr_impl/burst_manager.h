@@ -20,6 +20,7 @@
 
 #include <cstddef>
 #include <iostream>
+#include <chrono>
 
 #include <holoscan/logger/logger.hpp>
 
@@ -311,7 +312,7 @@ class RivermaxBurst::BurstHandler {
  */
 class RxBurstsManager {
  public:
-  static constexpr uint32_t DEFAULT_NUM_RX_BURSTS = 64;
+  static constexpr uint32_t DEFAULT_NUM_RX_BURSTS = 256;
   static constexpr uint32_t GET_BURST_TIMEOUT_MS = 1000;
 
   /**
@@ -407,7 +408,21 @@ class RxBurstsManager {
    * @return Shared pointer to the allocated burst parameters.
    */
   inline std::shared_ptr<RivermaxBurst> allocate_burst() {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
     auto burst = rx_bursts_mempool_->dequeue_burst();
+    
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    
+    if (burst != nullptr) {
+      HOLOSCAN_LOG_INFO("allocate_burst: dequeue_burst succeeded in {} μs (port_id: {}, queue_id: {}, burst_id: {})",
+                         duration.count(), port_id_, queue_id_, burst->get_burst_id());
+    } else {
+      HOLOSCAN_LOG_WARN("allocate_burst: dequeue_burst FAILED (timeout/no bursts available) in {} μs (port_id: {}, queue_id: {})",
+                         duration.count(), port_id_, queue_id_);
+    }
+    
     return burst;
   }
 

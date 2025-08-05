@@ -602,7 +602,7 @@ Status MediaSenderZeroCopyService::send_tx_burst(BurstParams* burst) {
     return Status::INVALID_PARAMETER;
   }
   std::lock_guard<std::mutex> lock(mutex_);
-  if (!burst->hdr.hdr.burst_flags & FRAME_BUFFER_IS_OWNED) {
+  if (!(burst->hdr.hdr.burst_flags & FRAME_BUFFER_IS_OWNED)) {
     HOLOSCAN_LOG_ERROR(
         "MediaSenderZeroCopyService{}:{}::send_tx_burst(): Illegal burst flags."
         "Buffer is owned by frame",

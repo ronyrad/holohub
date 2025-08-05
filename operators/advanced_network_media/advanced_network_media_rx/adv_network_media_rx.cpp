@@ -32,7 +32,7 @@ using namespace holoscan::advanced_network;
 
 namespace holoscan::ops {
 
-constexpr size_t FRAMES_IN_POOL = 50;
+constexpr size_t FRAMES_IN_POOL = 250;
 constexpr size_t PACKETS_DISPLAY_INTERVAL = 1000000;  // 1e6 packets
 
 // Enumeration for output format types
