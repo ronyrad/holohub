@@ -1,0 +1,316 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#ifndef OPERATORS_ADVANCED_NETWORK_MEDIA_RX_STATE_MACHINE_STRATEGIES_H_
+#define OPERATORS_ADVANCED_NETWORK_MEDIA_RX_STATE_MACHINE_STRATEGIES_H_
+
+#include <memory>
+#include <vector>
+#include <cuda_runtime.h>
+#include "frame_processing_state_machine.h"
+#include "../common/adv_network_media_common.h"
+
+namespace holoscan::ops {
+
+/**
+ * @brief Strategy detection and creation factory
+ */
+class StrategyFactory {
+public:
+  /**
+   * @brief Create strategy detector for pattern analysis
+   * @return Strategy detector instance
+   */
+  static std::unique_ptr<class StrategyDetector> create_detector();
+  
+  /**
+   * @brief Create contiguous strategy
+   * @param src_storage_type Source memory type
+   * @param dst_storage_type Destination memory type
+   * @return Contiguous strategy instance
+   */
+  static std::unique_ptr<IStateMachineAwareStrategy> create_contiguous_strategy(
+      nvidia::gxf::MemoryStorageType src_storage_type,
+      nvidia::gxf::MemoryStorageType dst_storage_type);
+  
+  /**
+   * @brief Create strided strategy
+   * @param stride_info Detected stride information
+   * @param src_storage_type Source memory type
+   * @param dst_storage_type Destination memory type
+   * @return Strided strategy instance
+   */
+  static std::unique_ptr<IStateMachineAwareStrategy> create_strided_strategy(
+      const StrideInfo& stride_info,
+      nvidia::gxf::MemoryStorageType src_storage_type,
+      nvidia::gxf::MemoryStorageType dst_storage_type);
+};
+
+/**
+ * @brief Strategy detector for analyzing packet patterns
+ */
+class StrategyDetector {
+public:
+  static constexpr size_t DETECTION_PACKET_COUNT = 4;
+  
+  /**
+   * @brief Configure detector with burst parameters
+   * @param header_stride_size Header stride from burst info
+   * @param payload_stride_size Payload stride from burst info
+   * @param hds_enabled Whether header data split is enabled
+   */
+  void configure_burst_parameters(size_t header_stride_size, 
+                                 size_t payload_stride_size, 
+                                 bool hds_enabled);
+  
+  /**
+   * @brief Collect packet for analysis
+   * @param rtp_params RTP packet parameters
+   * @param payload Payload pointer
+   * @param payload_size Payload size
+   * @return True if enough packets collected for detection
+   */
+  bool collect_packet(const RtpParams& rtp_params, uint8_t* payload, size_t payload_size);
+  
+  /**
+   * @brief Analyze collected packets and determine strategy
+   * @param src_storage_type Source memory storage type
+   * @param dst_storage_type Destination memory storage type
+   * @return Detected strategy or nullptr if detection failed
+   */
+  std::unique_ptr<IStateMachineAwareStrategy> detect_strategy(
+      nvidia::gxf::MemoryStorageType src_storage_type,
+      nvidia::gxf::MemoryStorageType dst_storage_type);
+  
+  /**
+   * @brief Check if detection is complete
+   * @return True if strategy has been determined
+   */
+  bool is_detection_complete() const { return detection_complete_; }
+  
+  /**
+   * @brief Reset detector for new detection cycle
+   */
+  void reset();
+  
+  /**
+   * @brief Get number of packets analyzed
+   * @return Packet count
+   */
+  size_t get_packets_analyzed() const { return packets_analyzed_; }
+
+private:
+  /**
+   * @brief Analyze collected packet pattern
+   * @return Analysis result with strategy type and stride info
+   */
+  std::optional<std::pair<CopyStrategy, StrideInfo>> analyze_pattern();
+  
+  /**
+   * @brief Validate RTP sequence continuity
+   * @return True if no sequence drops detected
+   */
+  bool validate_sequence_continuity() const;
+  
+  /**
+   * @brief Check for cyclic buffer wraparound
+   * @return True if wraparound detected
+   */
+  bool detect_buffer_wraparound() const;
+
+private:
+  // Detection data
+  std::vector<uint8_t*> collected_payloads_;
+  std::vector<size_t> collected_payload_sizes_;
+  std::vector<uint64_t> collected_sequences_;
+  size_t packets_analyzed_ = 0;
+  bool detection_complete_ = false;
+  
+  // Burst configuration
+  size_t expected_header_stride_ = 0;
+  size_t expected_payload_stride_ = 0;
+  bool hds_enabled_ = false;
+};
+
+/**
+ * @brief State machine aware contiguous strategy
+ */
+class StateMachineContiguousStrategy : public IStateMachineAwareStrategy {
+public:
+  /**
+   * @brief Constructor
+   * @param src_storage_type Source memory storage type
+   * @param dst_storage_type Destination memory storage type
+   */
+  StateMachineContiguousStrategy(nvidia::gxf::MemoryStorageType src_storage_type,
+                                nvidia::gxf::MemoryStorageType dst_storage_type);
+
+  // IStateMachineAwareStrategy interface
+  StateEvent process_packet(FrameProcessingStateMachine& state_machine,
+                           uint8_t* payload, 
+                           size_t payload_size) override;
+  
+  StateEvent execute_pending_copy(FrameProcessingStateMachine& state_machine) override;
+  
+  bool has_pending_operations() const override;
+  void reset() override;
+  CopyStrategy get_type() const override { return CopyStrategy::CONTIGUOUS; }
+
+private:
+  /**
+   * @brief Execute pending copy operation
+   * @param state_machine State machine reference
+   * @return State event result
+   */
+  StateEvent execute_copy(FrameProcessingStateMachine& state_machine);
+  
+  /**
+   * @brief Validate copy operation bounds
+   * @param state_machine State machine reference
+   * @return True if copy is safe to execute
+   */
+  bool validate_copy_bounds(FrameProcessingStateMachine& state_machine) const;
+
+private:
+  uint8_t* accumulated_start_ptr_ = nullptr;
+  size_t accumulated_size_ = 0;
+  cudaMemcpyKind copy_kind_;
+  nvidia::gxf::MemoryStorageType src_storage_type_;
+  nvidia::gxf::MemoryStorageType dst_storage_type_;
+};
+
+/**
+ * @brief State machine aware strided strategy
+ */
+class StateMachineStridedStrategy : public IStateMachineAwareStrategy {
+public:
+  /**
+   * @brief Constructor
+   * @param stride_info Stride pattern information
+   * @param src_storage_type Source memory storage type  
+   * @param dst_storage_type Destination memory storage type
+   */
+  StateMachineStridedStrategy(const StrideInfo& stride_info,
+                             nvidia::gxf::MemoryStorageType src_storage_type,
+                             nvidia::gxf::MemoryStorageType dst_storage_type);
+
+  // IStateMachineAwareStrategy interface
+  StateEvent process_packet(FrameProcessingStateMachine& state_machine,
+                           uint8_t* payload, 
+                           size_t payload_size) override;
+  
+  StateEvent execute_pending_copy(FrameProcessingStateMachine& state_machine) override;
+  
+  bool has_pending_operations() const override;
+  void reset() override;
+  CopyStrategy get_type() const override { return CopyStrategy::STRIDED; }
+
+private:
+  /**
+   * @brief Check if stride pattern is maintained
+   * @param payload Current packet payload pointer
+   * @param payload_size Current packet payload size
+   * @return True if stride is consistent
+   */
+  bool is_stride_maintained(uint8_t* payload, size_t payload_size);
+  
+  /**
+   * @brief Execute strided copy operation
+   * @param state_machine State machine reference
+   * @return State event result
+   */
+  StateEvent execute_strided_copy(FrameProcessingStateMachine& state_machine);
+  
+  /**
+   * @brief Execute individual packet copy (fallback)
+   * @param state_machine State machine reference
+   * @param payload Packet payload
+   * @param payload_size Payload size
+   * @return State event result
+   */
+  StateEvent execute_individual_copy(FrameProcessingStateMachine& state_machine,
+                                    uint8_t* payload, 
+                                    size_t payload_size);
+  
+  /**
+   * @brief Validate strided copy bounds
+   * @param state_machine State machine reference
+   * @return True if copy is safe to execute
+   */
+  bool validate_strided_copy_bounds(FrameProcessingStateMachine& state_machine) const;
+  
+  /**
+   * @brief Reset accumulation state for new pattern
+   * @param payload New packet payload
+   * @param payload_size New packet size
+   */
+  void reset_accumulation(uint8_t* payload, size_t payload_size);
+
+private:
+  StrideInfo stride_info_;
+  
+  // Accumulation state
+  uint8_t* first_packet_ptr_ = nullptr;
+  uint8_t* last_packet_ptr_ = nullptr;
+  size_t accumulated_packet_count_ = 0;
+  size_t accumulated_data_size_ = 0;
+  
+  // Stride validation
+  bool stride_validated_ = false;
+  size_t actual_stride_ = 0;
+  
+  // Memory configuration
+  cudaMemcpyKind copy_kind_;
+  nvidia::gxf::MemoryStorageType src_storage_type_;
+  nvidia::gxf::MemoryStorageType dst_storage_type_;
+  
+  // Wraparound detection threshold
+  static constexpr size_t WRAPAROUND_THRESHOLD = 1024 * 1024;
+};
+
+/**
+ * @brief Helper functions for memory copy operations
+ */
+class CopyOperationHelper {
+public:
+  /**
+   * @brief Determine appropriate copy kind
+   * @param src_storage_type Source memory type
+   * @param dst_storage_type Destination memory type
+   * @return CUDA copy kind
+   */
+  static cudaMemcpyKind get_copy_kind(nvidia::gxf::MemoryStorageType src_storage_type,
+                                     nvidia::gxf::MemoryStorageType dst_storage_type);
+  
+  /**
+   * @brief Execute safe memory copy with error handling
+   * @param dst Destination pointer
+   * @param src Source pointer
+   * @param size Copy size
+   * @param kind Copy kind
+   * @return True if copy succeeded
+   */
+  static bool safe_copy(void* dst, const void* src, size_t size, cudaMemcpyKind kind);
+  
+  /**
+   * @brief Execute safe 2D memory copy with error handling
+   * @param dst Destination pointer
+   * @param dst_pitch Destination pitch
+   * @param src Source pointer
+   * @param src_pitch Source pitch
+   * @param width Copy width
+   * @param height Copy height
+   * @param kind Copy kind
+   * @return True if copy succeeded
+   */
+  static bool safe_copy_2d(void* dst, size_t dst_pitch, 
+                          const void* src, size_t src_pitch,
+                          size_t width, size_t height, 
+                          cudaMemcpyKind kind);
+};
+
+}  // namespace holoscan::ops
+
+#endif  // OPERATORS_ADVANCED_NETWORK_MEDIA_RX_STATE_MACHINE_STRATEGIES_H_ 

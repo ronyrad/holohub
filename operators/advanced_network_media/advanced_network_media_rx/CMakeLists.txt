@@ -20,8 +20,10 @@ find_package(holoscan 2.6 REQUIRED CONFIG
 
 add_library(${PROJECT_NAME} SHARED
     adv_network_media_rx.cpp
-    burst_processor.cpp
-    packets_to_frames_converter.cpp
+    frame_processing_state_machine.cpp
+    state_machine_strategies.cpp
+    state_machine_packets_to_frames_converter.cpp
+    state_machine_burst_processor.cpp
 )
 
 add_library(holoscan::ops::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
@@ -41,6 +43,13 @@ target_link_libraries(${PROJECT_NAME}
     advanced_network_media_common
 )
 
+# Add CUDA support for state machine strategies
+find_package(CUDAToolkit REQUIRED)
+target_link_libraries(${PROJECT_NAME} 
+    PRIVATE 
+    CUDA::cudart
+)
+
 set_target_properties(${PROJECT_NAME} PROPERTIES
     OUTPUT_NAME "holoscan_op_advanced_network_media_rx"
     EXPORT_NAME ops::advanced_network_media_rx
@@ -52,6 +61,17 @@ install(
     ${PROJECT_NAME}
     EXPORT holoscan-networking-targets
     COMPONENT advanced_network-cpp
+)
+
+# Install headers for state machine classes (for external use/testing)
+install(
+    FILES
+    frame_processing_state_machine.h
+    state_machine_strategies.h
+    state_machine_packets_to_frames_converter.h
+    state_machine_burst_processor.h
+    DESTINATION include/holoscan/operators/advanced_network_media_rx
+    COMPONENT advanced_network-dev
 )
 
 if(HOLOHUB_BUILD_PYTHON)

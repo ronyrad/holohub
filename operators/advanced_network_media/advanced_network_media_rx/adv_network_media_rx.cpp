@@ -21,8 +21,8 @@
 #include "adv_network_media_rx.h"
 #include "advanced_network/common.h"
 #include "../common/adv_network_media_common.h"
-#include "packets_to_frames_converter.h"
-#include "burst_processor.h"
+#include "state_machine_packets_to_frames_converter.h"
+#include "state_machine_burst_processor.h"
 #include <holoscan/utils/cuda_stream_handler.hpp>
 #include "../common/frame_buffer.h"
 #include "../common/video_parameters.h"
@@ -39,11 +39,25 @@ constexpr size_t PACKETS_DISPLAY_INTERVAL = 1000000;  // 1e6 packets
 enum class OutputFormatType { VIDEO_BUFFER, TENSOR };
 
 /**
+ * @brief Frame completion handler for the RX operator
+ */
+class RxOperatorFrameCompletionHandler : public IFrameCompletionHandler {
+public:
+  explicit RxOperatorFrameCompletionHandler(class AdvNetworkMediaRxOpImpl* impl) : impl_(impl) {}
+  
+  void on_frame_completed(std::shared_ptr<FrameBufferBase> frame) override;
+  void on_frame_error(const std::string& error_message) override;
+
+private:
+  class AdvNetworkMediaRxOpImpl* impl_;
+};
+
+/**
  * @class AdvNetworkMediaRxOpImpl
  * @brief Implementation class for the AdvNetworkMediaRxOp operator.
  *
  * Handles high-level network management, frame pool management, and
- * coordinates with BurstProcessor for packet-level operations.
+ * coordinates with StateMachinePacketsToFramesConverter for packet-level operations.
  */
 class AdvNetworkMediaRxOpImpl : public IFrameProvider {
  public:
@@ -103,9 +117,12 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
     // Create pool of allocated frame buffers
     create_frame_pool();
 
-    // Create converter and burst processor
-    auto converter = PacketsToFramesConverter::create(this);
-    burst_processor_ = std::make_unique<BurstProcessor>(std::move(converter));
+    // Create state machine converter and burst processor
+    create_state_machine_converter();
+
+    // Create state machine burst processor
+    burst_processor_ = std::make_unique<StateMachineBurstProcessor>(converter_);
+
   }
 
   /**
@@ -147,6 +164,32 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
                                                               storage_type_));
       }
     }
+  }
+
+  /**
+   * @brief Creates the state machine converter
+   */
+  void create_state_machine_converter() {
+    // Create converter configuration
+    auto config = ConverterConfigurationHelper::create_from_burst_config(
+        0,    // header_stride (will be updated from burst info)
+        0,    // payload_stride (will be updated from burst info)  
+        parent_.hds_.get(), // hds_enabled
+        false, // payload_on_cpu (will be updated from burst info)
+        storage_type_ == nvidia::gxf::MemoryStorageType::kHost  // frames_on_host
+    );
+    
+    // Create frame provider (this class implements IFrameProvider)
+    auto frame_provider = std::shared_ptr<IFrameProvider>(this, [](IFrameProvider*){});
+    
+    // Create state machine converter
+    converter_ = std::make_shared<StateMachinePacketsToFramesConverter>(frame_provider, config);
+    
+    // Create completion handler
+    completion_handler_ = std::make_shared<RxOperatorFrameCompletionHandler>(this);
+    converter_->set_completion_handler(completion_handler_);
+    
+    HOLOSCAN_LOG_INFO("State machine converter initialized");
   }
 
   /**
@@ -329,7 +372,8 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
     }
   }
 
-  std::shared_ptr<FrameBufferBase> get_allocated_frame() override {
+  // Frame management methods (used internally)
+  std::shared_ptr<FrameBufferBase> get_allocated_frame() {
     if (frames_pool_.empty()) {
       throw std::runtime_error("Running out of resources, frames pool is empty");
     }
@@ -338,24 +382,65 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
     return frame;
   }
 
-  void on_new_frame(std::shared_ptr<FrameBufferBase> frame) override {
+  void on_new_frame(std::shared_ptr<FrameBufferBase> frame) {
     ready_frames_.push_back(frame);
     PACKET_TRACE_LOG("New frame ready: {}", frame->get_size());
+  }
+
+  // IFrameProvider interface (NEW - for state machine)
+  std::shared_ptr<FrameBufferBase> get_new_frame() override {
+    return get_allocated_frame();  // Reuse existing implementation
+  }
+
+  size_t get_frame_size() const override {
+    return frame_size_;
   }
 
  private:
   AdvNetworkMediaRxOp& parent_;
   int port_id_;
-  std::unique_ptr<BurstProcessor> burst_processor_;
+
+  // State machine based components
+  std::shared_ptr<StateMachinePacketsToFramesConverter> converter_;
+  std::shared_ptr<RxOperatorFrameCompletionHandler> completion_handler_;
+  std::unique_ptr<StateMachineBurstProcessor> burst_processor_;
+
+  // Frame management
   std::deque<std::shared_ptr<FrameBufferBase>> frames_pool_;
   std::deque<std::shared_ptr<FrameBufferBase>> ready_frames_;
   std::deque<BurstParams*> bursts_awaiting_cleanup_;
+  
+  // Statistics and configuration
   size_t total_packets_received_ = 0;
   nvidia::gxf::VideoFormat video_format_;
   size_t frame_size_;
   OutputFormatType output_format_{OutputFormatType::VIDEO_BUFFER};
   nvidia::gxf::MemoryStorageType storage_type_{nvidia::gxf::MemoryStorageType::kDevice};
 };
+
+// ========================================================================================
+// RxOperatorFrameCompletionHandler Implementation
+// ========================================================================================
+
+void RxOperatorFrameCompletionHandler::on_frame_completed(std::shared_ptr<FrameBufferBase> frame) {
+  if (!impl_ || !frame) return;
+  
+  // Add completed frame to ready queue (same as old on_new_frame)
+  impl_->on_new_frame(frame);
+  
+  HOLOSCAN_LOG_DEBUG("State machine frame completed: {} bytes", frame->get_size());
+}
+
+void RxOperatorFrameCompletionHandler::on_frame_error(const std::string& error_message) {
+  if (!impl_) return;
+  
+  HOLOSCAN_LOG_ERROR("State machine frame processing error: {}", error_message);
+  // Could add error statistics or recovery logic here
+}
+
+// ========================================================================================
+// AdvNetworkMediaRxOp Implementation
+// ========================================================================================
 
 AdvNetworkMediaRxOp::AdvNetworkMediaRxOp() : pimpl_(nullptr) {}
 
