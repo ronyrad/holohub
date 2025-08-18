@@ -9,14 +9,12 @@
 #include <memory>
 #include <string>
 #include <functional>
+#include "frame_provider.h"
 #include "advanced_network/common.h"
 #include "../common/adv_network_media_common.h"
 #include "../common/frame_buffer.h"
 
 namespace holoscan::ops {
-
-// Forward declarations for public interfaces  
-class IFrameProvider;
 
 namespace detail {
 
@@ -127,10 +125,10 @@ class FrameAssemblyController {
   void reset();
 
   /**
-   * @brief Get current assembly controller context (read-only)
-   * @return Current context
+   * @brief Get current frame state
+   * @return Current state of the assembly controller
    */
-  const FrameAssemblyContext& get_context() const { return context_; }
+  FrameState get_frame_state() const { return context_.frame_state; }
 
   /**
    * @brief Get current frame buffer
@@ -298,26 +296,6 @@ class FrameAssemblyHelper {
 };
 
 }  // namespace detail
-
-/**
- * @brief Frame provider interface for obtaining new frames (public API)
- */
-class IFrameProvider {
- public:
-  virtual ~IFrameProvider() = default;
-
-  /**
-   * @brief Get a new frame buffer for processing
-   * @return Frame buffer or nullptr if allocation failed
-   */
-  virtual std::shared_ptr<FrameBufferBase> get_new_frame() = 0;
-
-  /**
-   * @brief Get expected frame size
-   * @return Frame size in bytes
-   */
-  virtual size_t get_frame_size() const = 0;
-};
 
 }  // namespace holoscan::ops
 

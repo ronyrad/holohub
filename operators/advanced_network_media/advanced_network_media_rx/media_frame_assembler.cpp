@@ -194,8 +194,7 @@ void MediaFrameAssembler::reset() {
 
 MediaFrameAssembler::Statistics MediaFrameAssembler::get_statistics() const {
   // Update current state information
-  const auto& context = assembly_controller_->get_context();
-  statistics_.current_frame_state = convert_state_to_string(context.frame_state);
+  statistics_.current_frame_state = convert_state_to_string(assembly_controller_->get_frame_state());
 
   if (current_strategy_) {
     statistics_.current_strategy = convert_strategy_to_string(current_strategy_->get_type());
@@ -219,8 +218,7 @@ size_t MediaFrameAssembler::get_frame_position() const {
 StateEvent MediaFrameAssembler::determine_event(const RtpParams& rtp_params, uint8_t* payload) {
   // Check for M-bit marker first
   if (rtp_params.m_bit) {
-    const auto& context = assembly_controller_->get_context();
-    if (context.frame_state == FrameState::ERROR_RECOVERY) {
+    if (assembly_controller_->get_frame_state() == FrameState::ERROR_RECOVERY) {
       return StateEvent::RECOVERY_MARKER;
     } else {
       return StateEvent::MARKER_DETECTED;

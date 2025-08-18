@@ -8,15 +8,13 @@
 
 #include <memory>
 #include <functional>
+#include "frame_provider.h"
 #include "frame_assembly_controller.h"
 #include "memory_copy_strategies.h"
 #include "advanced_network/common.h"
 #include "../common/frame_buffer.h"
 
 namespace holoscan::ops {
-
-// Forward declarations for public interfaces
-class IFrameProvider;
 
 // Forward declarations for detail namespace types used internally
 namespace detail {

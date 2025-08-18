@@ -66,6 +66,7 @@ install(
 # Install only public interface headers (detail namespace classes are internal)
 install(
     FILES
+    frame_provider.h
     media_frame_assembler.h
     network_burst_processor.h
     DESTINATION include/holoscan/operators/advanced_network_media_rx
