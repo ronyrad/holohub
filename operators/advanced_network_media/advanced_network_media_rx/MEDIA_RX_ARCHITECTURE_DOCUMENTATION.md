@@ -349,30 +349,75 @@ struct Statistics {
 - Optimized memory copy patterns
 - Support for both Host-to-Device and Device-to-Device transfers
 
-## Namespace Organization
+## File Organization and Namespace Structure
+
+### Header File Responsibilities
+
+| File | Domain | Contains |
+|------|--------|----------|
+| `frame_provider.h` | **Frame Allocation** | `IFrameProvider` interface |
+| `media_frame_assembler.h` | **Frame Assembly Coordination** | `MediaFrameAssembler`, `AssemblerConfiguration` |
+| `network_burst_processor.h` | **Network Packet Processing** | `NetworkBurstProcessor`, `PacketExtractionResult` |
+| `frame_assembly_controller.h` | **State Machine Logic** | `FrameAssemblyController`, `StateEvent`, `FrameState` |
+| `memory_copy_strategies.h` | **Memory Copy Strategies** | `IMemoryCopyStrategy`, `CopyStrategy`, Strategy implementations |
+
+### Namespace Organization
 
 The implementation follows proper encapsulation with clear API boundaries:
 
 ```cpp
 namespace holoscan::ops {
     // Public API - stable interfaces for external use
-    class MediaFrameAssembler;
-    class NetworkBurstProcessor;
-    class IFrameProvider;
-    class IFrameCompletionHandler;
+    class MediaFrameAssembler;        // media_frame_assembler.h
+    class NetworkBurstProcessor;      // network_burst_processor.h
+    class IFrameProvider;             // frame_provider.h
+    class IFrameCompletionHandler;    // Callback interfaces
     
     namespace detail {
         // Internal implementation - subject to change
-        class FrameAssemblyController;
-        class IMemoryCopyStrategy;
-        class ContiguousMemoryCopyStrategy;
-        class StridedMemoryCopyStrategy;
-        class StrategyDetector;
-        enum class StateEvent;
-        enum class FrameState;
+        class FrameAssemblyController;      // frame_assembly_controller.h
+        class IMemoryCopyStrategy;          // memory_copy_strategies.h
+        class ContiguousMemoryCopyStrategy; // memory_copy_strategies.h
+        class StridedMemoryCopyStrategy;    // memory_copy_strategies.h
+        class StrategyDetector;             // memory_copy_strategies.h
+        enum class StateEvent;              // frame_assembly_controller.h
+        enum class FrameState;              // frame_assembly_controller.h
+        enum class CopyStrategy;            // memory_copy_strategies.h
     }
 }
 ```
+
+## Recent Architectural Improvements
+
+### Key Refactoring Changes
+1. **Improved API Design**: Refactored `PacketExtractionResult` structure replacing mixed return/output parameter patterns
+2. **Enhanced Encapsulation**: Replaced `get_context()` with individual getters (`get_frame_state()`, `get_current_frame()`, `get_frame_position()`)
+3. **Better Domain Separation**: Moved `IFrameProvider` to dedicated `frame_provider.h` for cleaner dependencies
+4. **Strategy Interface Relocation**: Moved `IMemoryCopyStrategy` and `CopyStrategy` to `memory_copy_strategies.h` for proper domain ownership
+5. **Naming Consistency**: Renamed `create_from_burst_config()` to `create_with_burst_parameters()` for clarity
+6. **Dead Code Removal**: Eliminated unused `has_pending_copy` context flag and redundant state checks
+7. **Guard Clause Pattern**: Applied early return patterns in `process_packets_in_burst()` for better readability
+
+### Benefits Achieved
+- **✅ Cleaner Dependencies**: Each header has a single, clear responsibility
+- **✅ Better Encapsulation**: Private implementation details properly hidden
+- **✅ Improved Maintainability**: Easier to understand and modify individual components
+- **✅ Enhanced Testability**: Components can be tested in isolation
+- **✅ Reduced Coupling**: Interfaces properly separated from implementations
+
+### Design Decisions Rationale
+
+#### 1. **Interface Placement Strategy**
+- `IFrameProvider` moved to `frame_provider.h`: Frame allocation is a separate concern from state management
+- `IMemoryCopyStrategy` moved to `memory_copy_strategies.h`: Strategy interface belongs with its implementations
+
+#### 2. **API Design Improvements**
+- `PacketExtractionResult`: Replaced mixed return/output parameters with structured return type
+- Individual getters over `get_context()`: Follows principle of least privilege, better encapsulation
+
+#### 3. **Namespace Design**
+- Public API in `holoscan::ops`: Stable interfaces for external consumption
+- Implementation details in `holoscan::ops::detail`: Internal types subject to change
 
 ## Future Enhancements
 
@@ -389,8 +434,9 @@ The Advanced Network Media RX Operator provides a robust, high-performance solut
 
 - **Automatic Optimization**: Strategy detection for optimal performance
 - **Robust Error Handling**: Comprehensive corruption detection and recovery
-- **Clean Architecture**: Proper separation of concerns with clear interfaces
+- **Clean Architecture**: Proper separation of concerns with clear interfaces and domain boundaries
 - **High Performance**: Optimized memory operations and copy strategies
 - **Flexibility**: Configurable for various network and memory configurations
+- **Maintainable Design**: Well-organized codebase with clear responsibilities and minimal coupling
 
-The state machine-driven approach ensures reliable frame assembly while the strategy pattern enables optimal performance across different network configurations.
+The state machine-driven approach ensures reliable frame assembly while the strategy pattern enables optimal performance across different network configurations. The recent architectural improvements have enhanced code quality, maintainability, and extensibility while preserving the system's performance characteristics.
