@@ -117,8 +117,8 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
     // Create pool of allocated frame buffers
     create_frame_pool();
 
-    // Create state machine assembler and burst processor
-    create_state_machine_assembler();
+    // Create media frame assembler and burst processor
+    create_media_frame_assembler();
 
     // Create state machine burst processor
     burst_processor_ = std::make_unique<NetworkBurstProcessor>(assembler_);
@@ -166,9 +166,9 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
   }
 
   /**
-   * @brief Creates the state machine assembler
+   * @brief Creates the media frame assembler
    */
-  void create_state_machine_assembler() {
+  void create_media_frame_assembler() {
     // Create assembler configuration
     auto config = AssemblerConfigurationHelper::create_from_burst_config(
         0,                   // header_stride (will be updated from burst info)
