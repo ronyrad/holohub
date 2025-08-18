@@ -131,16 +131,16 @@ void MediaFrameAssembler::process_incoming_packet(const RtpParams& rtp_params, u
     // Determine appropriate event for this packet
     StateEvent event = determine_event(rtp_params, payload);
 
-    // Process event through state machine
+    // Process event through assembly controller
     auto result = assembly_controller_->process_event(event, &rtp_params, payload);
 
     if (!result.success) {
-      HOLOSCAN_LOG_ERROR("State machine processing failed: {}", result.error_message);
+      HOLOSCAN_LOG_ERROR("Assembly controller processing failed: {}", result.error_message);
       handle_error_recovery(result.error_message);
       return;
     }
 
-    // Execute actions based on state machine result
+    // Execute actions based on assembly controller result
     execute_actions(result, rtp_params, payload);
 
     PACKET_TRACE_LOG("Packet processed successfully: seq={}, event={}, new_state={}",
@@ -189,7 +189,7 @@ void MediaFrameAssembler::reset() {
   statistics_.current_frame_state = "IDLE";
   statistics_.last_error.clear();
 
-  HOLOSCAN_LOG_INFO("Converter reset to initial state");
+  HOLOSCAN_LOG_INFO("Media Frame assembler has been reset to initial state");
 }
 
 MediaFrameAssembler::Statistics MediaFrameAssembler::get_statistics() const {
@@ -345,7 +345,7 @@ bool MediaFrameAssembler::handle_strategy_detection(const RtpParams& rtp_params,
 void MediaFrameAssembler::setup_strategy(std::unique_ptr<IMemoryCopyStrategy> strategy) {
   current_strategy_ = std::move(strategy);
 
-  // Note: For the old interface compatibility, we would set the strategy in the state machine
+  // Note: For the old interface compatibility, we would set the strategy in the assembly controller
   // but since IMemoryCopyStrategy is different from IPacketCopyStrategy, we manage it here
 
   if (current_strategy_) {
@@ -385,7 +385,7 @@ void MediaFrameAssembler::handle_frame_completion() {
     }
   }
 
-  // Signal frame completion to state machine
+  // Signal frame completion to assembly controller
   auto result = assembly_controller_->process_event(StateEvent::FRAME_COMPLETED);
 
   if (!result.success) {
@@ -393,7 +393,7 @@ void MediaFrameAssembler::handle_frame_completion() {
     return;
   }
 
-  // Handle frame emission if requested by state machine
+  // Handle frame emission if requested by assembly controller
   if (result.should_emit_frame) {
     auto frame = assembly_controller_->get_current_frame();
     if (frame && completion_handler_) {

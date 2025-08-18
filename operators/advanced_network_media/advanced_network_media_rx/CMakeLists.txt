@@ -43,7 +43,7 @@ target_link_libraries(${PROJECT_NAME}
     advanced_network_media_common
 )
 
-# Add CUDA support for state machine strategies
+# Add CUDA support for memory copy strategies
 find_package(CUDAToolkit REQUIRED)
 target_link_libraries(${PROJECT_NAME} 
     PRIVATE 

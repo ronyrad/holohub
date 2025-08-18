@@ -16,16 +16,16 @@ namespace holoscan::ops {
 using namespace holoscan::advanced_network;
 
 /**
- * @brief State machine burst processor that integrates with the state machine converter
+ * @brief Network burst processor that integrates with the frame assembler
  *
  * This class handles burst-level operations and forwards individual packets
- * to the MediaFrameAssembler for state machine processing.
+ * to the MediaFrameAssembler for frame assembly processing.
  */
 class NetworkBurstProcessor {
  public:
   /**
    * @brief Constructor
-   * @param assembler The frame assembler with state machine
+   * @param assembler The frame assembler with assembly controller
    */
   explicit NetworkBurstProcessor(std::shared_ptr<MediaFrameAssembler> assembler);
 

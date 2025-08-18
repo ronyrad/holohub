@@ -281,7 +281,7 @@ ContiguousMemoryCopyStrategy::ContiguousMemoryCopyStrategy(
       dst_storage_type_(dst_storage_type),
       copy_kind_(CopyOperationHelper::get_copy_kind(src_storage_type, dst_storage_type)) {}
 
-StateEvent ContiguousMemoryCopyStrategy::process_packet(FrameAssemblyController& state_machine,
+StateEvent ContiguousMemoryCopyStrategy::process_packet(FrameAssemblyController& assembly_controller,
                                                         uint8_t* payload, size_t payload_size) {
   // Input validation for packet processing
   if (!payload || payload_size == 0) {
@@ -305,7 +305,7 @@ StateEvent ContiguousMemoryCopyStrategy::process_packet(FrameAssemblyController&
                      accumulated_size_);
 
     // Execute pending copy before starting new accumulation
-    StateEvent copy_result = execute_copy(state_machine);
+    StateEvent copy_result = execute_copy(assembly_controller);
     if (copy_result == StateEvent::CORRUPTION_DETECTED) {
       return copy_result;
     }
@@ -319,7 +319,7 @@ StateEvent ContiguousMemoryCopyStrategy::process_packet(FrameAssemblyController&
   accumulated_size_ += payload_size;
 
   // Safety check for frame bounds
-  auto frame = state_machine.get_current_frame();
+  auto frame = assembly_controller.get_current_frame();
   if (frame && accumulated_size_ > frame->get_size()) {
     HOLOSCAN_LOG_ERROR("ContiguousStrategy: Accumulated size ({}) exceeds frame size ({})",
                        accumulated_size_,
@@ -342,27 +342,27 @@ void ContiguousMemoryCopyStrategy::reset() {
 }
 
 StateEvent ContiguousMemoryCopyStrategy::execute_pending_copy(
-    FrameAssemblyController& state_machine) {
-  return execute_copy(state_machine);
+    FrameAssemblyController& assembly_controller) {
+  return execute_copy(assembly_controller);
 }
 
-StateEvent ContiguousMemoryCopyStrategy::execute_copy(FrameAssemblyController& state_machine) {
+StateEvent ContiguousMemoryCopyStrategy::execute_copy(FrameAssemblyController& assembly_controller) {
   if (!has_pending_operations()) {
     return StateEvent::COPY_EXECUTED;
   }
 
   // Validate copy bounds
-  if (!validate_copy_bounds(state_machine)) {
+  if (!validate_copy_bounds(assembly_controller)) {
     HOLOSCAN_LOG_ERROR("ContiguousStrategy: Copy bounds validation failed");
     reset();
     return StateEvent::CORRUPTION_DETECTED;
   }
 
-  auto frame = state_machine.get_current_frame();
-  uint8_t* dst_ptr = static_cast<uint8_t*>(frame->get()) + state_machine.get_frame_position();
+  auto frame = assembly_controller.get_current_frame();
+  uint8_t* dst_ptr = static_cast<uint8_t*>(frame->get()) + assembly_controller.get_frame_position();
 
   PACKET_TRACE_LOG("ContiguousStrategy: Executing copy - pos={}, size={}, frame_size={}",
-                   state_machine.get_frame_position(),
+                   assembly_controller.get_frame_position(),
                    accumulated_size_,
                    frame->get_size());
 
@@ -375,10 +375,10 @@ StateEvent ContiguousMemoryCopyStrategy::execute_copy(FrameAssemblyController& s
   }
 
   // Update frame position
-  state_machine.advance_frame_position(accumulated_size_);
+  assembly_controller.advance_frame_position(accumulated_size_);
 
   PACKET_TRACE_LOG("ContiguousStrategy: Copy completed - new_pos={}, copied={}",
-                   state_machine.get_frame_position(),
+                   assembly_controller.get_frame_position(),
                    accumulated_size_);
 
   // Reset accumulation state
@@ -388,13 +388,13 @@ StateEvent ContiguousMemoryCopyStrategy::execute_copy(FrameAssemblyController& s
 }
 
 bool ContiguousMemoryCopyStrategy::validate_copy_bounds(
-    FrameAssemblyController& state_machine) const {
-  auto frame = state_machine.get_current_frame();
+    FrameAssemblyController& assembly_controller) const {
+  auto frame = assembly_controller.get_current_frame();
   if (!frame) {
     return false;
   }
 
-  size_t current_pos = state_machine.get_frame_position();
+  size_t current_pos = assembly_controller.get_frame_position();
   size_t frame_size = frame->get_size();
 
   return (current_pos + accumulated_size_ <= frame_size);
@@ -412,7 +412,7 @@ StridedMemoryCopyStrategy::StridedMemoryCopyStrategy(
       dst_storage_type_(dst_storage_type),
       copy_kind_(CopyOperationHelper::get_copy_kind(src_storage_type, dst_storage_type)) {}
 
-StateEvent StridedMemoryCopyStrategy::process_packet(FrameAssemblyController& state_machine,
+StateEvent StridedMemoryCopyStrategy::process_packet(FrameAssemblyController& assembly_controller,
                                                      uint8_t* payload, size_t payload_size) {
   // Input validation
   if (!payload || payload_size == 0) {
@@ -435,10 +435,10 @@ StateEvent StridedMemoryCopyStrategy::process_packet(FrameAssemblyController& st
     // Execute accumulated copy if we have multiple packets
     StateEvent copy_result;
     if (accumulated_packet_count_ > 1) {
-      copy_result = execute_strided_copy(state_machine);
+      copy_result = execute_strided_copy(assembly_controller);
     } else {
       copy_result =
-          execute_individual_copy(state_machine, first_packet_ptr_, stride_info_.payload_size);
+          execute_individual_copy(assembly_controller, first_packet_ptr_, stride_info_.payload_size);
     }
 
     if (copy_result == StateEvent::CORRUPTION_DETECTED) {
@@ -466,7 +466,7 @@ bool StridedMemoryCopyStrategy::has_pending_operations() const {
   return accumulated_packet_count_ > 0 && first_packet_ptr_ != nullptr;
 }
 
-StateEvent StridedMemoryCopyStrategy::execute_pending_copy(FrameAssemblyController& state_machine) {
+StateEvent StridedMemoryCopyStrategy::execute_pending_copy(FrameAssemblyController& assembly_controller) {
   if (!has_pending_operations()) {
     return StateEvent::COPY_EXECUTED;
   }
@@ -474,10 +474,10 @@ StateEvent StridedMemoryCopyStrategy::execute_pending_copy(FrameAssemblyControll
   // Execute accumulated copy if we have multiple packets
   StateEvent copy_result;
   if (accumulated_packet_count_ > 1 && stride_validated_) {
-    copy_result = execute_strided_copy(state_machine);
+    copy_result = execute_strided_copy(assembly_controller);
   } else {
     copy_result =
-        execute_individual_copy(state_machine, first_packet_ptr_, stride_info_.payload_size);
+        execute_individual_copy(assembly_controller, first_packet_ptr_, stride_info_.payload_size);
   }
 
   if (copy_result == StateEvent::COPY_EXECUTED) {
@@ -529,20 +529,20 @@ bool StridedMemoryCopyStrategy::is_stride_maintained(uint8_t* payload, size_t pa
   }
 }
 
-StateEvent StridedMemoryCopyStrategy::execute_strided_copy(FrameAssemblyController& state_machine) {
+StateEvent StridedMemoryCopyStrategy::execute_strided_copy(FrameAssemblyController& assembly_controller) {
   if (accumulated_packet_count_ <= 1 || !first_packet_ptr_) {
     return StateEvent::COPY_EXECUTED;
   }
 
   // Validate copy bounds
-  if (!validate_strided_copy_bounds(state_machine)) {
+  if (!validate_strided_copy_bounds(assembly_controller)) {
     HOLOSCAN_LOG_ERROR("StridedStrategy: Strided copy bounds validation failed");
     reset();
     return StateEvent::CORRUPTION_DETECTED;
   }
 
-  auto frame = state_machine.get_current_frame();
-  uint8_t* dst_ptr = static_cast<uint8_t*>(frame->get()) + state_machine.get_frame_position();
+  auto frame = assembly_controller.get_current_frame();
+  uint8_t* dst_ptr = static_cast<uint8_t*>(frame->get()) + assembly_controller.get_frame_position();
 
   // Setup 2D copy parameters
   size_t width = stride_info_.payload_size;
@@ -566,10 +566,10 @@ StateEvent StridedMemoryCopyStrategy::execute_strided_copy(FrameAssemblyControll
   }
 
   // Update frame position
-  state_machine.advance_frame_position(accumulated_data_size_);
+  assembly_controller.advance_frame_position(accumulated_data_size_);
 
   PACKET_TRACE_LOG("StridedStrategy: Strided copy completed - new_pos={}, copied={}",
-                   state_machine.get_frame_position(),
+                   assembly_controller.get_frame_position(),
                    accumulated_data_size_);
 
   // Reset accumulation
@@ -579,16 +579,16 @@ StateEvent StridedMemoryCopyStrategy::execute_strided_copy(FrameAssemblyControll
 }
 
 StateEvent StridedMemoryCopyStrategy::execute_individual_copy(
-    FrameAssemblyController& state_machine, uint8_t* payload, size_t payload_size) {
-  auto frame = state_machine.get_current_frame();
+    FrameAssemblyController& assembly_controller, uint8_t* payload, size_t payload_size) {
+  auto frame = assembly_controller.get_current_frame();
   if (!frame) {
     return StateEvent::CORRUPTION_DETECTED;
   }
 
-  uint8_t* dst_ptr = static_cast<uint8_t*>(frame->get()) + state_machine.get_frame_position();
+  uint8_t* dst_ptr = static_cast<uint8_t*>(frame->get()) + assembly_controller.get_frame_position();
 
   // Bounds checking
-  if (state_machine.get_frame_position() + payload_size > frame->get_size()) {
+  if (assembly_controller.get_frame_position() + payload_size > frame->get_size()) {
     HOLOSCAN_LOG_ERROR("StridedStrategy: Individual copy would exceed frame bounds");
     return StateEvent::CORRUPTION_DETECTED;
   }
@@ -602,20 +602,20 @@ StateEvent StridedMemoryCopyStrategy::execute_individual_copy(
   }
 
   // Update frame position
-  state_machine.advance_frame_position(payload_size);
+  assembly_controller.advance_frame_position(payload_size);
 
   return StateEvent::COPY_EXECUTED;
 }
 
 bool StridedMemoryCopyStrategy::validate_strided_copy_bounds(
-    FrameAssemblyController& state_machine) const {
-  auto frame = state_machine.get_current_frame();
+    FrameAssemblyController& assembly_controller) const {
+  auto frame = assembly_controller.get_current_frame();
   if (!frame) {
     return false;
   }
 
   size_t total_copy_size = stride_info_.payload_size * accumulated_packet_count_;
-  size_t current_pos = state_machine.get_frame_position();
+  size_t current_pos = assembly_controller.get_frame_position();
   size_t frame_size = frame->get_size();
 
   return (current_pos + total_copy_size <= frame_size);

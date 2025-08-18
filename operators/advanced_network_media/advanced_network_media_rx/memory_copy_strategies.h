@@ -135,7 +135,7 @@ class StrategyDetector {
 };
 
 /**
- * @brief State machine aware contiguous strategy
+ * @brief Assembly controller aware contiguous strategy
  */
 class ContiguousMemoryCopyStrategy : public IMemoryCopyStrategy {
  public:
@@ -148,10 +148,10 @@ class ContiguousMemoryCopyStrategy : public IMemoryCopyStrategy {
                                nvidia::gxf::MemoryStorageType dst_storage_type);
 
   // IMemoryCopyStrategy interface
-  StateEvent process_packet(FrameAssemblyController& state_machine, uint8_t* payload,
+  StateEvent process_packet(FrameAssemblyController& assembly_controller, uint8_t* payload,
                             size_t payload_size) override;
 
-  StateEvent execute_pending_copy(FrameAssemblyController& state_machine) override;
+  StateEvent execute_pending_copy(FrameAssemblyController& assembly_controller) override;
 
   bool has_pending_operations() const override;
   void reset() override;
@@ -160,17 +160,17 @@ class ContiguousMemoryCopyStrategy : public IMemoryCopyStrategy {
  private:
   /**
    * @brief Execute pending copy operation
-   * @param state_machine State machine reference
+   * @param assembly_controller Frame assembly controller reference
    * @return State event result
    */
-  StateEvent execute_copy(FrameAssemblyController& state_machine);
+  StateEvent execute_copy(FrameAssemblyController& assembly_controller);
 
   /**
    * @brief Validate copy operation bounds
-   * @param state_machine State machine reference
+   * @param assembly_controller Frame assembly controller reference
    * @return True if copy is safe to execute
    */
-  bool validate_copy_bounds(FrameAssemblyController& state_machine) const;
+  bool validate_copy_bounds(FrameAssemblyController& assembly_controller) const;
 
  private:
   uint8_t* accumulated_start_ptr_ = nullptr;
@@ -181,7 +181,7 @@ class ContiguousMemoryCopyStrategy : public IMemoryCopyStrategy {
 };
 
 /**
- * @brief State machine aware strided strategy
+ * @brief Assembly controller aware strided strategy
  */
 class StridedMemoryCopyStrategy : public IMemoryCopyStrategy {
  public:
@@ -196,10 +196,10 @@ class StridedMemoryCopyStrategy : public IMemoryCopyStrategy {
                             nvidia::gxf::MemoryStorageType dst_storage_type);
 
   // IMemoryCopyStrategy interface
-  StateEvent process_packet(FrameAssemblyController& state_machine, uint8_t* payload,
+  StateEvent process_packet(FrameAssemblyController& assembly_controller, uint8_t* payload,
                             size_t payload_size) override;
 
-  StateEvent execute_pending_copy(FrameAssemblyController& state_machine) override;
+  StateEvent execute_pending_copy(FrameAssemblyController& assembly_controller) override;
 
   bool has_pending_operations() const override;
   void reset() override;
@@ -216,27 +216,27 @@ class StridedMemoryCopyStrategy : public IMemoryCopyStrategy {
 
   /**
    * @brief Execute strided copy operation
-   * @param state_machine State machine reference
+   * @param assembly_controller Frame assembly controller reference
    * @return State event result
    */
-  StateEvent execute_strided_copy(FrameAssemblyController& state_machine);
+  StateEvent execute_strided_copy(FrameAssemblyController& assembly_controller);
 
   /**
    * @brief Execute individual packet copy (fallback)
-   * @param state_machine State machine reference
+   * @param assembly_controller Frame assembly controller reference
    * @param payload Packet payload
    * @param payload_size Payload size
    * @return State event result
    */
-  StateEvent execute_individual_copy(FrameAssemblyController& state_machine, uint8_t* payload,
+  StateEvent execute_individual_copy(FrameAssemblyController& assembly_controller, uint8_t* payload,
                                      size_t payload_size);
 
   /**
    * @brief Validate strided copy bounds
-   * @param state_machine State machine reference
+   * @param assembly_controller Frame assembly controller reference
    * @return True if copy is safe to execute
    */
-  bool validate_strided_copy_bounds(FrameAssemblyController& state_machine) const;
+  bool validate_strided_copy_bounds(FrameAssemblyController& assembly_controller) const;
 
   /**
    * @brief Reset accumulation state for new pattern

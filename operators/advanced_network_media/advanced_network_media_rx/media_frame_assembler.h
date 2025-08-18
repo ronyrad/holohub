@@ -73,11 +73,19 @@ class IFrameCompletionHandler {
 };
 
 /**
- * @brief State machine based packets to frames converter
+ * @brief Frame assembler for converting packets to frames
  *
- * This class provides a clean, state machine driven approach to converting
+ * This class provides a clean, assembly controller driven approach to converting
  * network packets into video frames with automatic strategy detection and
  * robust error handling.
+ * 
+ * @note Architecture: This class coordinates between three main components:
+ *       - FrameAssemblyController: Assembly controller for state transitions
+ *       - IMemoryCopyStrategy: Strategy pattern for packet data processing
+ *       - StrategyDetector: Automatic detection of optimal copy strategies
+ *       
+ *       The assembly controller layer focuses purely on state management and does
+ *       not directly process packet data, maintaining clean separation of concerns.
  */
 class MediaFrameAssembler {
  public:
@@ -125,12 +133,12 @@ class MediaFrameAssembler {
   void force_strategy_redetection();
 
   /**
-   * @brief Reset converter to initial state
+   * @brief Reset Media Frame Assembler to initial state
    */
   void reset();
 
   /**
-   * @brief Get current converter statistics
+   * @brief Get current Media Frame Assembler statistics
    * @return Statistics structure
    */
   struct Statistics {
@@ -146,7 +154,7 @@ class MediaFrameAssembler {
   Statistics get_statistics() const;
 
   /**
-   * @brief Check if converter has pending operations
+   * @brief Check if Media Frame Assembler has pending operations
    * @return True if copy operations are pending
    */
   bool has_pending_operations() const;
@@ -165,7 +173,7 @@ class MediaFrameAssembler {
 
  private:
   /**
-   * @brief Determine state machine event from packet parameters
+   * @brief Determine assembly controller event from packet parameters
    * @param rtp_params RTP packet parameters
    * @param payload Packet payload
    * @return Appropriate state event
@@ -173,7 +181,7 @@ class MediaFrameAssembler {
   StateEvent determine_event(const RtpParams& rtp_params, uint8_t* payload);
 
   /**
-   * @brief Execute actions based on state machine transition result
+   * @brief Execute actions based on assembly controller transition result
    * @param result State transition result
    * @param rtp_params RTP packet parameters
    * @param payload Packet payload
@@ -239,7 +247,7 @@ class MediaFrameAssembler {
 };
 
 /**
- * @brief Default frame completion handler that can be used with the converter
+ * @brief Default frame completion handler that can be used with the Media Frame Assembler
  */
 class DefaultFrameCompletionHandler : public IFrameCompletionHandler {
  public:

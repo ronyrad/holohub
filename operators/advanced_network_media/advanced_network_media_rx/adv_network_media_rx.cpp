@@ -57,7 +57,7 @@ class RxOperatorFrameCompletionHandler : public IFrameCompletionHandler {
  * @brief Implementation class for the AdvNetworkMediaRxOp operator.
  *
  * Handles high-level network management, frame pool management, and
- * coordinates with StateMachinePacketsToFramesConverter for packet-level operations.
+ * coordinates with MediaFrameAssembler for packet-level operations.
  */
 class AdvNetworkMediaRxOpImpl : public IFrameProvider {
  public:
@@ -117,10 +117,10 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
     // Create pool of allocated frame buffers
     create_frame_pool();
 
-    // Create media frame assembler and burst processor
+    // Create media frame assembler and network burst processor
     create_media_frame_assembler();
 
-    // Create state machine burst processor
+    // Create network burst processor
     burst_processor_ = std::make_unique<NetworkBurstProcessor>(assembler_);
   }
 
@@ -181,14 +181,14 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
     // Create frame provider (this class implements IFrameProvider)
     auto frame_provider = std::shared_ptr<IFrameProvider>(this, [](IFrameProvider*) {});
 
-    // Create state machine converter
+    // Create frame assembler
     assembler_ = std::make_shared<MediaFrameAssembler>(frame_provider, config);
 
     // Create completion handler
     completion_handler_ = std::make_shared<RxOperatorFrameCompletionHandler>(this);
     assembler_->set_completion_handler(completion_handler_);
 
-    HOLOSCAN_LOG_INFO("State machine converter initialized");
+    HOLOSCAN_LOG_INFO("Media frame assembler initialized");
   }
 
   /**
@@ -392,9 +392,8 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
     PACKET_TRACE_LOG("New frame ready: {}", frame->get_size());
   }
 
-  // IFrameProvider interface (NEW - for state machine)
   std::shared_ptr<FrameBufferBase> get_new_frame() override {
-    return get_allocated_frame();  // Reuse existing implementation
+    return get_allocated_frame();
   }
 
   size_t get_frame_size() const override { return frame_size_; }
@@ -403,7 +402,7 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
   AdvNetworkMediaRxOp& parent_;
   int port_id_;
 
-  // State machine based components
+  // Frame assembly components
   std::shared_ptr<MediaFrameAssembler> assembler_;
   std::shared_ptr<RxOperatorFrameCompletionHandler> completion_handler_;
   std::unique_ptr<NetworkBurstProcessor> burst_processor_;
@@ -432,14 +431,14 @@ void RxOperatorFrameCompletionHandler::on_frame_completed(std::shared_ptr<FrameB
   // Add completed frame to ready queue (same as old on_new_frame)
   impl_->on_new_frame(frame);
 
-  HOLOSCAN_LOG_DEBUG("State machine frame completed: {} bytes", frame->get_size());
+  HOLOSCAN_LOG_DEBUG("Frame assembly completed: {} bytes", frame->get_size());
 }
 
 void RxOperatorFrameCompletionHandler::on_frame_error(const std::string& error_message) {
   if (!impl_)
     return;
 
-  HOLOSCAN_LOG_ERROR("State machine frame processing error: {}", error_message);
+  HOLOSCAN_LOG_ERROR("Frame assembly error: {}", error_message);
   // Could add error statistics or recovery logic here
 }
 

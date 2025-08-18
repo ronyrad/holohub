@@ -22,10 +22,10 @@ void NetworkBurstProcessor::process_burst(BurstParams* burst, bool hds_enabled) 
     return;
   }
 
-  // Configure converter with burst parameters on first burst
+  // Configure assembler with burst parameters on first burst
   configure_assembler_from_burst(burst);
 
-  // Process all packets in the burst through state machine
+  // Process all packets in the burst through frame assembler
   process_packets_in_burst(burst, hds_enabled);
 }
 
@@ -35,7 +35,7 @@ void NetworkBurstProcessor::configure_assembler_from_burst(BurstParams* burst) {
       reinterpret_cast<const AnoBurstExtendedInfo*>(&(burst->hdr.custom_burst_data));
 
   if (!configuration_initialized_) {
-    // Configure converter with burst parameters
+    // Configure assembler with burst parameters
     assembler_->configure_burst_parameters(
         burst_info->header_stride_size, burst_info->payload_stride_size, burst_info->hds_on);
 
@@ -62,7 +62,7 @@ void NetworkBurstProcessor::configure_assembler_from_burst(BurstParams* burst) {
 }
 
 void NetworkBurstProcessor::process_packets_in_burst(BurstParams* burst, bool hds_enabled) {
-  // Process each packet through the state machine converter
+  // Process each packet through the frame assembler
   for (size_t i = 0; i < burst->hdr.hdr.num_pkts; ++i) {
     RtpParams rtp_params;
     uint8_t* payload = extract_packet_data(burst, i, hds_enabled, rtp_params);

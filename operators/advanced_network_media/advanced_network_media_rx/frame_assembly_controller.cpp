@@ -25,17 +25,23 @@ FrameAssemblyController::FrameAssemblyController(std::shared_ptr<IFrameProvider>
   // Initialize with a new frame
   allocate_new_frame();
 
-  HOLOSCAN_LOG_DEBUG("FrameProcessingStateMachine initialized");
+  HOLOSCAN_LOG_DEBUG("FrameAssemblyController initialized");
 }
 
 StateTransitionResult FrameAssemblyController::process_event(StateEvent event,
                                                              const RtpParams* rtp_params,
                                                              uint8_t* payload) {
+  // NOTE: rtp_params and payload are currently unused in state transition logic.
+  // This assembly controller focuses purely on event-driven state transitions.
+  // Parameters are kept for API consistency and future extensibility.
+  (void)rtp_params;  // Suppress unused parameter warning
+  (void)payload;     // Suppress unused parameter warning
+  
   packets_processed_++;
 
   PACKET_TRACE_LOG("Processing event {} in state {}",
-                   StateMachineHelper::event_to_string(event),
-                   StateMachineHelper::state_to_string(context_.frame_state));
+                   FrameAssemblyHelper::event_to_string(event),
+                   FrameAssemblyHelper::state_to_string(context_.frame_state));
 
   StateTransitionResult result;
 
@@ -66,8 +72,8 @@ StateTransitionResult FrameAssemblyController::process_event(StateEvent event,
     FrameState old_state = context_.frame_state;
     if (transition_to_state(result.new_frame_state)) {
       HOLOSCAN_LOG_DEBUG("State transition: {} -> {}",
-                         StateMachineHelper::state_to_string(old_state),
-                         StateMachineHelper::state_to_string(result.new_frame_state));
+                         FrameAssemblyHelper::state_to_string(old_state),
+                         FrameAssemblyHelper::state_to_string(result.new_frame_state));
     } else {
       result = create_error_result("Invalid state transition");
     }
@@ -89,7 +95,7 @@ void FrameAssemblyController::reset() {
   // Allocate new frame
   allocate_new_frame();
 
-  HOLOSCAN_LOG_DEBUG("State machine reset to initial state");
+  HOLOSCAN_LOG_DEBUG("Assembly controller reset to initial state");
 }
 
 bool FrameAssemblyController::advance_frame_position(size_t bytes) {
@@ -143,10 +149,10 @@ bool FrameAssemblyController::validate_frame_bounds(size_t required_bytes) const
 }
 
 bool FrameAssemblyController::transition_to_state(FrameState new_state) {
-  if (!StateMachineHelper::is_valid_transition(context_.frame_state, new_state)) {
+  if (!FrameAssemblyHelper::is_valid_transition(context_.frame_state, new_state)) {
     HOLOSCAN_LOG_ERROR("Invalid state transition: {} -> {}",
-                       StateMachineHelper::state_to_string(context_.frame_state),
-                       StateMachineHelper::state_to_string(new_state));
+                       FrameAssemblyHelper::state_to_string(context_.frame_state),
+                       FrameAssemblyHelper::state_to_string(new_state));
     return false;
   }
 
@@ -318,10 +324,10 @@ StateTransitionResult FrameAssemblyController::create_error_result(
 }
 
 // ========================================================================================
-// StateMachineHelper Implementation
+// FrameAssemblyHelper Implementation
 // ========================================================================================
 
-std::string StateMachineHelper::state_to_string(FrameState state) {
+std::string FrameAssemblyHelper::state_to_string(FrameState state) {
   switch (state) {
     case FrameState::IDLE:
       return "IDLE";
@@ -338,7 +344,7 @@ std::string StateMachineHelper::state_to_string(FrameState state) {
   }
 }
 
-std::string StateMachineHelper::event_to_string(StateEvent event) {
+std::string FrameAssemblyHelper::event_to_string(StateEvent event) {
   switch (event) {
     case StateEvent::PACKET_ARRIVED:
       return "PACKET_ARRIVED";
@@ -359,7 +365,7 @@ std::string StateMachineHelper::event_to_string(StateEvent event) {
   }
 }
 
-bool StateMachineHelper::is_valid_transition(FrameState from_state, FrameState to_state) {
+bool FrameAssemblyHelper::is_valid_transition(FrameState from_state, FrameState to_state) {
   // Define valid state transitions
   switch (from_state) {
     case FrameState::IDLE:
@@ -385,7 +391,7 @@ bool StateMachineHelper::is_valid_transition(FrameState from_state, FrameState t
   }
 }
 
-std::vector<StateEvent> StateMachineHelper::get_valid_events(FrameState state) {
+std::vector<StateEvent> FrameAssemblyHelper::get_valid_events(FrameState state) {
   switch (state) {
     case FrameState::IDLE:
       return {StateEvent::PACKET_ARRIVED,
