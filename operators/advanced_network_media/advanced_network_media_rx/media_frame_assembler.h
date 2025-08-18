@@ -221,7 +221,7 @@ class MediaFrameAssembler {
 
  private:
   // Core components
-  std::unique_ptr<FrameAssemblyController> state_machine_;
+  std::unique_ptr<FrameAssemblyController> assembly_controller_;
   std::unique_ptr<StrategyDetector> strategy_detector_;
   std::unique_ptr<IMemoryCopyStrategy> current_strategy_;
 

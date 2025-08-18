@@ -58,8 +58,8 @@ MediaFrameAssembler::MediaFrameAssembler(std::shared_ptr<IFrameProvider> frame_p
     throw std::invalid_argument("Invalid assembler configuration");
   }
 
-  // Create state machine
-  state_machine_ = std::make_unique<FrameAssemblyController>(frame_provider);
+  // Create frame assembly controller
+  assembly_controller_ = std::make_unique<FrameAssemblyController>(frame_provider);
 
   // Create strategy detector if needed
   if (config_.enable_strategy_detection && !config_.force_contiguous_strategy) {
@@ -132,7 +132,7 @@ void MediaFrameAssembler::process_incoming_packet(const RtpParams& rtp_params, u
     StateEvent event = determine_event(rtp_params, payload);
 
     // Process event through state machine
-    auto result = state_machine_->process_event(event, &rtp_params, payload);
+    auto result = assembly_controller_->process_event(event, &rtp_params, payload);
 
     if (!result.success) {
       HOLOSCAN_LOG_ERROR("State machine processing failed: {}", result.error_message);
@@ -160,7 +160,7 @@ void MediaFrameAssembler::force_strategy_redetection() {
     strategy_detector_->reset();
     strategy_detection_active_ = true;
     current_strategy_.reset();
-    state_machine_->set_strategy(nullptr);
+    assembly_controller_->set_strategy(nullptr);
     statistics_.strategy_redetections++;
 
     HOLOSCAN_LOG_INFO("Strategy redetection forced");
@@ -168,7 +168,7 @@ void MediaFrameAssembler::force_strategy_redetection() {
 }
 
 void MediaFrameAssembler::reset() {
-  state_machine_->reset();
+  assembly_controller_->reset();
 
   if (strategy_detector_) {
     strategy_detector_->reset();
@@ -194,7 +194,7 @@ void MediaFrameAssembler::reset() {
 
 MediaFrameAssembler::Statistics MediaFrameAssembler::get_statistics() const {
   // Update current state information
-  const auto& context = state_machine_->get_context();
+  const auto& context = assembly_controller_->get_context();
   statistics_.current_frame_state = convert_state_to_string(context.frame_state);
 
   if (current_strategy_) {
@@ -205,23 +205,23 @@ MediaFrameAssembler::Statistics MediaFrameAssembler::get_statistics() const {
 }
 
 bool MediaFrameAssembler::has_pending_operations() const {
-  const auto& context = state_machine_->get_context();
+  const auto& context = assembly_controller_->get_context();
   return context.has_pending_copy ||
          (current_strategy_ && current_strategy_->has_pending_operations());
 }
 
 std::shared_ptr<FrameBufferBase> MediaFrameAssembler::get_current_frame() const {
-  return state_machine_->get_current_frame();
+  return assembly_controller_->get_current_frame();
 }
 
 size_t MediaFrameAssembler::get_frame_position() const {
-  return state_machine_->get_frame_position();
+  return assembly_controller_->get_frame_position();
 }
 
 StateEvent MediaFrameAssembler::determine_event(const RtpParams& rtp_params, uint8_t* payload) {
   // Check for M-bit marker first
   if (rtp_params.m_bit) {
-    const auto& context = state_machine_->get_context();
+    const auto& context = assembly_controller_->get_context();
     if (context.frame_state == FrameState::ERROR_RECOVERY) {
       return StateEvent::RECOVERY_MARKER;
     } else {
@@ -269,7 +269,7 @@ void MediaFrameAssembler::execute_actions(const StateTransitionResult& result,
        result.new_frame_state == FrameState::COMPLETING_FRAME) &&
       current_strategy_ && payload) {
     StateEvent strategy_result =
-        current_strategy_->process_packet(*state_machine_, payload, rtp_params.payload_size);
+        current_strategy_->process_packet(*assembly_controller_, payload, rtp_params.payload_size);
 
     if (strategy_result == StateEvent::CORRUPTION_DETECTED) {
       handle_error_recovery("Strategy processing detected corruption");
@@ -282,7 +282,7 @@ void MediaFrameAssembler::execute_actions(const StateTransitionResult& result,
   // Execute pending copies if requested
   if (result.should_execute_copy && current_strategy_) {
     if (current_strategy_->has_pending_operations()) {
-      StateEvent copy_result = current_strategy_->execute_pending_copy(*state_machine_);
+      StateEvent copy_result = current_strategy_->execute_pending_copy(*assembly_controller_);
       if (copy_result == StateEvent::CORRUPTION_DETECTED) {
         handle_error_recovery("Copy execution failed");
         return;
@@ -297,7 +297,7 @@ void MediaFrameAssembler::execute_actions(const StateTransitionResult& result,
 
   // Handle frame emission
   if (result.should_emit_frame) {
-    auto frame = state_machine_->get_current_frame();
+    auto frame = assembly_controller_->get_current_frame();
     if (frame && completion_handler_) {
       PACKET_TRACE_LOG("Emitting frame to completion handler");
       completion_handler_->on_frame_completed(frame);
@@ -306,7 +306,7 @@ void MediaFrameAssembler::execute_actions(const StateTransitionResult& result,
 
     // Signal frame emission complete to transition FRAME_READY -> IDLE
     PACKET_TRACE_LOG("Sending FRAME_COMPLETED event to transition FRAME_READY -> IDLE");
-    auto emission_result = state_machine_->process_event(StateEvent::FRAME_COMPLETED);
+    auto emission_result = assembly_controller_->process_event(StateEvent::FRAME_COMPLETED);
     if (!emission_result.success) {
       HOLOSCAN_LOG_ERROR("Failed to complete frame emission: {}", emission_result.error_message);
     } else {
@@ -356,12 +356,12 @@ void MediaFrameAssembler::setup_strategy(std::unique_ptr<IMemoryCopyStrategy> st
 }
 
 bool MediaFrameAssembler::validate_packet_integrity(const RtpParams& rtp_params) {
-  auto frame = state_machine_->get_current_frame();
+  auto frame = assembly_controller_->get_current_frame();
   if (!frame) {
     return false;
   }
 
-  int64_t bytes_left = frame->get_size() - state_machine_->get_frame_position();
+  int64_t bytes_left = frame->get_size() - assembly_controller_->get_frame_position();
 
   if (bytes_left < 0) {
     return false;  // Frame overflow
@@ -378,7 +378,7 @@ bool MediaFrameAssembler::validate_packet_integrity(const RtpParams& rtp_params)
 void MediaFrameAssembler::handle_frame_completion() {
   // Execute any pending copy operations
   if (current_strategy_ && current_strategy_->has_pending_operations()) {
-    StateEvent copy_result = current_strategy_->execute_pending_copy(*state_machine_);
+    StateEvent copy_result = current_strategy_->execute_pending_copy(*assembly_controller_);
     if (copy_result == StateEvent::CORRUPTION_DETECTED) {
       handle_error_recovery("Final copy operation failed");
       return;
@@ -386,7 +386,7 @@ void MediaFrameAssembler::handle_frame_completion() {
   }
 
   // Signal frame completion to state machine
-  auto result = state_machine_->process_event(StateEvent::FRAME_COMPLETED);
+  auto result = assembly_controller_->process_event(StateEvent::FRAME_COMPLETED);
 
   if (!result.success) {
     handle_error_recovery("Frame completion validation failed");
@@ -395,7 +395,7 @@ void MediaFrameAssembler::handle_frame_completion() {
 
   // Handle frame emission if requested by state machine
   if (result.should_emit_frame) {
-    auto frame = state_machine_->get_current_frame();
+    auto frame = assembly_controller_->get_current_frame();
     if (frame && completion_handler_) {
       PACKET_TRACE_LOG("Emitting frame to completion handler from handle_frame_completion");
       completion_handler_->on_frame_completed(frame);
@@ -406,7 +406,7 @@ void MediaFrameAssembler::handle_frame_completion() {
     PACKET_TRACE_LOG(
         "Sending FRAME_COMPLETED event to transition FRAME_READY -> IDLE from "
         "handle_frame_completion");
-    auto emission_result = state_machine_->process_event(StateEvent::FRAME_COMPLETED);
+    auto emission_result = assembly_controller_->process_event(StateEvent::FRAME_COMPLETED);
     if (!emission_result.success) {
       HOLOSCAN_LOG_ERROR("Failed to complete frame emission in handle_frame_completion: {}",
                          emission_result.error_message);
