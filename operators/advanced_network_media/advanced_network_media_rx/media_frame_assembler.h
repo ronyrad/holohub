@@ -30,6 +30,7 @@ class IMemoryCopyStrategy;
 // Import detail types for cleaner private method signatures
 using detail::FrameAssemblyController;
 using detail::IMemoryCopyStrategy;
+using detail::CopyStrategy;
 using detail::StateEvent;
 using detail::StateTransitionResult;
 using detail::StrategyDetector;

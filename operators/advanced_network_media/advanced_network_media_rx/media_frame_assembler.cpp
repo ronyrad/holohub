@@ -205,9 +205,7 @@ MediaFrameAssembler::Statistics MediaFrameAssembler::get_statistics() const {
 }
 
 bool MediaFrameAssembler::has_pending_operations() const {
-  const auto& context = assembly_controller_->get_context();
-  return context.has_pending_copy ||
-         (current_strategy_ && current_strategy_->has_pending_operations());
+  return current_strategy_ && current_strategy_->has_pending_operations();
 }
 
 std::shared_ptr<FrameBufferBase> MediaFrameAssembler::get_current_frame() const {

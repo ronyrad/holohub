@@ -4,6 +4,7 @@
  */
 
 #include "frame_assembly_controller.h"
+#include "memory_copy_strategies.h"
 #include "../common/adv_network_media_common.h"
 
 namespace holoscan::ops {
@@ -85,7 +86,7 @@ StateTransitionResult FrameAssemblyController::process_event(StateEvent event,
 void FrameAssemblyController::reset() {
   context_.frame_state = FrameState::IDLE;
   context_.frame_position = 0;
-  context_.has_pending_copy = false;
+
 
   // Reset strategy if set
   if (strategy_) {
@@ -198,7 +199,7 @@ StateTransitionResult FrameAssemblyController::handle_receiving_state(StateEvent
 
     case StateEvent::COPY_EXECUTED:
       // Copy operation completed, continue receiving
-      context_.has_pending_copy = false;
+    
       return create_success_result(FrameState::RECEIVING_PACKETS);
 
     case StateEvent::CORRUPTION_DETECTED:
