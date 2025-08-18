@@ -15,6 +15,11 @@
  * limitations under the License.
  */
 
+//
+// OBSOLETE - This file will be removed after review
+// Use state_machine_packets_to_frames_converter.cpp instead
+//
+
 #include <cuda_runtime.h>
 #include "advanced_network/common.h"
 #include "packets_to_frames_converter.h"
@@ -98,7 +103,8 @@ void ContiguousStrategy::process_packet(PacketsToFramesConverter& converter, uin
 }
 
 void ContiguousStrategy::execute_copy(PacketsToFramesConverter& converter) {
-  if (accumulated_contiguous_size_ == 0 || current_payload_start_ptr_ == nullptr) return;
+  if (accumulated_contiguous_size_ == 0 || current_payload_start_ptr_ == nullptr)
+    return;
 
   auto frame = converter.get_destination_frame_buffer();
   uint8_t* dst_ptr = static_cast<uint8_t*>(frame->get()) + converter.get_frame_position();
@@ -198,7 +204,8 @@ void StridedStrategy::process_packet(PacketsToFramesConverter& converter, uint8_
 }
 
 void StridedStrategy::execute_copy(PacketsToFramesConverter& converter) {
-  if (packet_count_ == 0 || first_packet_ptr_ == nullptr) return;
+  if (packet_count_ == 0 || first_packet_ptr_ == nullptr)
+    return;
 
   if (packet_count_ > 1 && stride_validated_) {
     execute_accumulated_strided_copy(converter);
@@ -208,7 +215,8 @@ void StridedStrategy::execute_copy(PacketsToFramesConverter& converter) {
 }
 
 void StridedStrategy::execute_accumulated_strided_copy(PacketsToFramesConverter& converter) {
-  if (packet_count_ <= 1 || first_packet_ptr_ == nullptr) return;
+  if (packet_count_ <= 1 || first_packet_ptr_ == nullptr)
+    return;
 
   auto frame = converter.get_destination_frame_buffer();
   uint8_t* dst_ptr = static_cast<uint8_t*>(frame->get()) + converter.get_frame_position();
@@ -331,13 +339,17 @@ bool StridedStrategy::detect_buffer_wraparound(uint8_t* current_ptr, uint8_t* ex
   // If current pointer is significantly lower than expected, likely a wrap-around
   if (current_ptr < expected_ptr) {
     ptrdiff_t backward_diff = expected_ptr - current_ptr;
-    if (backward_diff > WRAPAROUND_THRESHOLD) { return true; }
+    if (backward_diff > WRAPAROUND_THRESHOLD) {
+      return true;
+    }
   }
 
   // Additional check: if current pointer is way ahead of expected, might also indicate wrap
   if (current_ptr > expected_ptr) {
     ptrdiff_t forward_diff = current_ptr - expected_ptr;
-    if (forward_diff > WRAPAROUND_THRESHOLD) { return true; }
+    if (forward_diff > WRAPAROUND_THRESHOLD) {
+      return true;
+    }
   }
 
   return false;
@@ -392,7 +404,9 @@ void PacketCopyStrategyDetector::configure_burst_parameters(size_t header_stride
 
 bool PacketCopyStrategyDetector::collect_packet_info(const RtpParams& rtp_params, uint8_t* payload,
                                                      size_t payload_size) {
-  if (strategy_confirmed_) { return true; }
+  if (strategy_confirmed_) {
+    return true;
+  }
 
   // Use provided RTP parameters directly (no parsing needed)
   detection_payloads_.push_back(payload);
@@ -463,7 +477,8 @@ void PacketCopyStrategyDetector::reset_detection() {
 
 std::optional<std::pair<CopyStrategy, StrideInfo>>
 PacketCopyStrategyDetector::analyze_packet_pattern() {
-  if (detection_payloads_.size() < 2) return std::nullopt;
+  if (detection_payloads_.size() < 2)
+    return std::nullopt;
 
   size_t expected_stride = expected_hds_on_ ? expected_payload_stride_
                                             : (expected_header_stride_ + expected_payload_stride_);
@@ -491,7 +506,9 @@ PacketCopyStrategyDetector::analyze_packet_pattern() {
 
     size_t pointer_diff = curr_ptr - prev_ptr;
 
-    if (i == 1) { actual_stride = pointer_diff; }
+    if (i == 1) {
+      actual_stride = pointer_diff;
+    }
 
     // Check for exact contiguity: next pointer should be exactly at previous_pointer +
     // previous_payload_size
@@ -554,7 +571,9 @@ PacketCopyStrategyDetector::analyze_packet_pattern() {
 }
 
 bool PacketCopyStrategyDetector::validate_rtp_sequence_continuity() const {
-  if (detection_rtp_sequences_.size() < 2) { return true; }
+  if (detection_rtp_sequences_.size() < 2) {
+    return true;
+  }
 
   for (size_t i = 1; i < detection_rtp_sequences_.size(); ++i) {
     uint64_t prev_seq = detection_rtp_sequences_[i - 1];
@@ -576,7 +595,9 @@ bool PacketCopyStrategyDetector::validate_rtp_sequence_continuity() const {
 }
 
 bool PacketCopyStrategyDetector::detect_cyclic_buffer_wraparound() const {
-  if (detection_payloads_.size() < 2) { return false; }
+  if (detection_payloads_.size() < 2) {
+    return false;
+  }
 
   for (size_t i = 1; i < detection_payloads_.size(); ++i) {
     uint8_t* prev_ptr = detection_payloads_[i - 1];
@@ -683,7 +704,7 @@ void PacketsToFramesConverter::process_incoming_packet(const RtpParams& rtp_para
 
     // Process the final packet data first to include it in accumulated batch
     current_strategy_->process_packet(*this, payload, rtp_params.payload_size);
-    
+
     // Then execute single copy operation for all accumulated data (including M-bit packet)
     handle_end_of_frame();
     return;
@@ -702,11 +723,15 @@ void PacketsToFramesConverter::process_incoming_packet(const RtpParams& rtp_para
 
 void PacketsToFramesConverter::reset_frame_state() {
   current_byte_in_frame_ = 0;
-  if (current_strategy_) { current_strategy_->reset_state(); }
+  if (current_strategy_) {
+    current_strategy_->reset_state();
+  }
 }
 
 CopyStrategy PacketsToFramesConverter::get_current_strategy() const {
-  if (current_strategy_) { return current_strategy_->get_strategy_type(); }
+  if (current_strategy_) {
+    return current_strategy_->get_strategy_type();
+  }
   return CopyStrategy::UNKNOWN;
 }
 

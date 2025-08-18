@@ -20,10 +20,10 @@ find_package(holoscan 2.6 REQUIRED CONFIG
 
 add_library(${PROJECT_NAME} SHARED
     adv_network_media_rx.cpp
-    frame_processing_state_machine.cpp
-    state_machine_strategies.cpp
-    state_machine_packets_to_frames_converter.cpp
-    state_machine_burst_processor.cpp
+    frame_assembly_controller.cpp
+    memory_copy_strategies.cpp
+    media_frame_assembler.cpp
+    network_burst_processor.cpp
 )
 
 add_library(holoscan::ops::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
@@ -63,13 +63,11 @@ install(
     COMPONENT advanced_network-cpp
 )
 
-# Install headers for state machine classes (for external use/testing)
+# Install only public interface headers (detail namespace classes are internal)
 install(
     FILES
-    frame_processing_state_machine.h
-    state_machine_strategies.h
-    state_machine_packets_to_frames_converter.h
-    state_machine_burst_processor.h
+    media_frame_assembler.h
+    network_burst_processor.h
     DESTINATION include/holoscan/operators/advanced_network_media_rx
     COMPONENT advanced_network-dev
 )

@@ -21,8 +21,8 @@
 #include "adv_network_media_rx.h"
 #include "advanced_network/common.h"
 #include "../common/adv_network_media_common.h"
-#include "state_machine_packets_to_frames_converter.h"
-#include "state_machine_burst_processor.h"
+#include "media_frame_assembler.h"
+#include "network_burst_processor.h"
 #include <holoscan/utils/cuda_stream_handler.hpp>
 #include "../common/frame_buffer.h"
 #include "../common/video_parameters.h"
@@ -42,13 +42,13 @@ enum class OutputFormatType { VIDEO_BUFFER, TENSOR };
  * @brief Frame completion handler for the RX operator
  */
 class RxOperatorFrameCompletionHandler : public IFrameCompletionHandler {
-public:
+ public:
   explicit RxOperatorFrameCompletionHandler(class AdvNetworkMediaRxOpImpl* impl) : impl_(impl) {}
-  
+
   void on_frame_completed(std::shared_ptr<FrameBufferBase> frame) override;
   void on_frame_error(const std::string& error_message) override;
 
-private:
+ private:
   class AdvNetworkMediaRxOpImpl* impl_;
 };
 
@@ -121,8 +121,7 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
     create_state_machine_converter();
 
     // Create state machine burst processor
-    burst_processor_ = std::make_unique<StateMachineBurstProcessor>(converter_);
-
+    burst_processor_ = std::make_unique<NetworkBurstProcessor>(converter_);
   }
 
   /**
@@ -172,23 +171,23 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
   void create_state_machine_converter() {
     // Create converter configuration
     auto config = ConverterConfigurationHelper::create_from_burst_config(
-        0,    // header_stride (will be updated from burst info)
-        0,    // payload_stride (will be updated from burst info)  
-        parent_.hds_.get(), // hds_enabled
-        false, // payload_on_cpu (will be updated from burst info)
+        0,                   // header_stride (will be updated from burst info)
+        0,                   // payload_stride (will be updated from burst info)
+        parent_.hds_.get(),  // hds_enabled
+        false,               // payload_on_cpu (will be updated from burst info)
         storage_type_ == nvidia::gxf::MemoryStorageType::kHost  // frames_on_host
     );
-    
+
     // Create frame provider (this class implements IFrameProvider)
-    auto frame_provider = std::shared_ptr<IFrameProvider>(this, [](IFrameProvider*){});
-    
+    auto frame_provider = std::shared_ptr<IFrameProvider>(this, [](IFrameProvider*) {});
+
     // Create state machine converter
-    converter_ = std::make_shared<StateMachinePacketsToFramesConverter>(frame_provider, config);
-    
+    converter_ = std::make_shared<MediaFrameAssembler>(frame_provider, config);
+
     // Create completion handler
     completion_handler_ = std::make_shared<RxOperatorFrameCompletionHandler>(this);
     converter_->set_completion_handler(completion_handler_);
-    
+
     HOLOSCAN_LOG_INFO("State machine converter initialized");
   }
 
@@ -227,11 +226,14 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
   void compute(InputContext& op_input, OutputContext& op_output, ExecutionContext& context) {
     BurstParams* burst;
     auto status = get_rx_burst(&burst, port_id_, parent_.queue_id_.get());
-    if (status != Status::SUCCESS) return;
+    if (status != Status::SUCCESS)
+      return;
 
     const auto& packets_received = burst->hdr.hdr.num_pkts;
     total_packets_received_ += packets_received;
-    if (packets_received == 0) { return; }
+    if (packets_received == 0) {
+      return;
+    }
     if (total_packets_received_ > PACKETS_DISPLAY_INTERVAL) {
       HOLOSCAN_LOG_INFO("Got burst with {} pkts | total packets received {}",
                         packets_received,
@@ -247,7 +249,8 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
 
     append_to_frame(burst);
 
-    if (ready_frames_.empty()) return;
+    if (ready_frames_.empty())
+      return;
 
     size_t total_frames = ready_frames_.size();
 
@@ -337,7 +340,9 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
    * @return Shared pointer to a ready frame, or nullptr if none is available.
    */
   std::shared_ptr<FrameBufferBase> pop_ready_frame() {
-    if (ready_frames_.empty()) { return nullptr; }
+    if (ready_frames_.empty()) {
+      return nullptr;
+    }
 
     auto frame = ready_frames_.front();
     ready_frames_.pop_front();
@@ -392,24 +397,22 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
     return get_allocated_frame();  // Reuse existing implementation
   }
 
-  size_t get_frame_size() const override {
-    return frame_size_;
-  }
+  size_t get_frame_size() const override { return frame_size_; }
 
  private:
   AdvNetworkMediaRxOp& parent_;
   int port_id_;
 
   // State machine based components
-  std::shared_ptr<StateMachinePacketsToFramesConverter> converter_;
+  std::shared_ptr<MediaFrameAssembler> converter_;
   std::shared_ptr<RxOperatorFrameCompletionHandler> completion_handler_;
-  std::unique_ptr<StateMachineBurstProcessor> burst_processor_;
+  std::unique_ptr<NetworkBurstProcessor> burst_processor_;
 
   // Frame management
   std::deque<std::shared_ptr<FrameBufferBase>> frames_pool_;
   std::deque<std::shared_ptr<FrameBufferBase>> ready_frames_;
   std::deque<BurstParams*> bursts_awaiting_cleanup_;
-  
+
   // Statistics and configuration
   size_t total_packets_received_ = 0;
   nvidia::gxf::VideoFormat video_format_;
@@ -423,17 +426,19 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
 // ========================================================================================
 
 void RxOperatorFrameCompletionHandler::on_frame_completed(std::shared_ptr<FrameBufferBase> frame) {
-  if (!impl_ || !frame) return;
-  
+  if (!impl_ || !frame)
+    return;
+
   // Add completed frame to ready queue (same as old on_new_frame)
   impl_->on_new_frame(frame);
-  
+
   HOLOSCAN_LOG_DEBUG("State machine frame completed: {} bytes", frame->get_size());
 }
 
 void RxOperatorFrameCompletionHandler::on_frame_error(const std::string& error_message) {
-  if (!impl_) return;
-  
+  if (!impl_)
+    return;
+
   HOLOSCAN_LOG_ERROR("State machine frame processing error: {}", error_message);
   // Could add error statistics or recovery logic here
 }
@@ -484,7 +489,9 @@ void AdvNetworkMediaRxOp::initialize() {
   HOLOSCAN_LOG_INFO("AdvNetworkMediaRxOp::initialize()");
   holoscan::Operator::initialize();
 
-  if (!pimpl_) { pimpl_ = new AdvNetworkMediaRxOpImpl(*this); }
+  if (!pimpl_) {
+    pimpl_ = new AdvNetworkMediaRxOpImpl(*this);
+  }
 
   pimpl_->initialize();
 }

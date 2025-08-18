@@ -15,6 +15,11 @@
  * limitations under the License.
  */
 
+//
+// OBSOLETE - This file will be removed after review
+// Use state_machine_packets_to_frames_converter.h instead
+//
+
 #ifndef OPERATORS_ADVANCED_NETWORK_MEDIA_RX_PACKETS_TO_FRAMES_CONVERTER_H_
 #define OPERATORS_ADVANCED_NETWORK_MEDIA_RX_PACKETS_TO_FRAMES_CONVERTER_H_
 

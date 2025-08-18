@@ -15,6 +15,11 @@
  * limitations under the License.
  */
 
+//
+// OBSOLETE - This file will be removed after review
+// Use state_machine_burst_processor.cpp instead
+//
+
 #include "burst_processor.h"
 #include "../common/adv_network_media_common.h"
 #include "advanced_network/common.h"
