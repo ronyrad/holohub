@@ -25,9 +25,9 @@ class NetworkBurstProcessor {
  public:
   /**
    * @brief Constructor
-   * @param converter The refactored converter with state machine
+   * @param assembler The frame assembler with state machine
    */
-  explicit NetworkBurstProcessor(std::shared_ptr<MediaFrameAssembler> converter);
+  explicit NetworkBurstProcessor(std::shared_ptr<MediaFrameAssembler> assembler);
 
   /**
    * @brief Process a burst of packets
@@ -38,10 +38,10 @@ class NetworkBurstProcessor {
 
  private:
   /**
-   * @brief Configure converter with burst parameters
+   * @brief Configure assembler with burst parameters
    * @param burst The burst containing configuration info
    */
-  void configure_converter_from_burst(BurstParams* burst);
+  void configure_assembler_from_burst(BurstParams* burst);
 
   /**
    * @brief Process all packets in the burst
@@ -66,7 +66,7 @@ class NetworkBurstProcessor {
   static constexpr int CPU_PKTS = 0;
   static constexpr int GPU_PKTS = 1;
 
-  std::shared_ptr<MediaFrameAssembler> converter_;
+  std::shared_ptr<MediaFrameAssembler> assembler_;
   bool configuration_initialized_ = false;
 };
 

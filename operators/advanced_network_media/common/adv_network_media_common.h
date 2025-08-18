@@ -38,7 +38,7 @@
   }
 
 // Packet tracing debug flag - uncomment to enable extensive packet debugging
-// #define ENABLE_PACKET_TRACING
+//#define ENABLE_PACKET_TRACING
 
 #ifdef ENABLE_PACKET_TRACING
 #define PACKET_TRACE_LOG(fmt, ...) HOLOSCAN_LOG_INFO("[PACKET_TRACE] " fmt, ##__VA_ARGS__)

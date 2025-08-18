@@ -117,11 +117,11 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
     // Create pool of allocated frame buffers
     create_frame_pool();
 
-    // Create state machine converter and burst processor
-    create_state_machine_converter();
+    // Create state machine assembler and burst processor
+    create_state_machine_assembler();
 
     // Create state machine burst processor
-    burst_processor_ = std::make_unique<NetworkBurstProcessor>(converter_);
+    burst_processor_ = std::make_unique<NetworkBurstProcessor>(assembler_);
   }
 
   /**
@@ -166,11 +166,11 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
   }
 
   /**
-   * @brief Creates the state machine converter
+   * @brief Creates the state machine assembler
    */
-  void create_state_machine_converter() {
-    // Create converter configuration
-    auto config = ConverterConfigurationHelper::create_from_burst_config(
+  void create_state_machine_assembler() {
+    // Create assembler configuration
+    auto config = AssemblerConfigurationHelper::create_from_burst_config(
         0,                   // header_stride (will be updated from burst info)
         0,                   // payload_stride (will be updated from burst info)
         parent_.hds_.get(),  // hds_enabled
@@ -182,11 +182,11 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
     auto frame_provider = std::shared_ptr<IFrameProvider>(this, [](IFrameProvider*) {});
 
     // Create state machine converter
-    converter_ = std::make_shared<MediaFrameAssembler>(frame_provider, config);
+    assembler_ = std::make_shared<MediaFrameAssembler>(frame_provider, config);
 
     // Create completion handler
     completion_handler_ = std::make_shared<RxOperatorFrameCompletionHandler>(this);
-    converter_->set_completion_handler(completion_handler_);
+    assembler_->set_completion_handler(completion_handler_);
 
     HOLOSCAN_LOG_INFO("State machine converter initialized");
   }
@@ -404,7 +404,7 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
   int port_id_;
 
   // State machine based components
-  std::shared_ptr<MediaFrameAssembler> converter_;
+  std::shared_ptr<MediaFrameAssembler> assembler_;
   std::shared_ptr<RxOperatorFrameCompletionHandler> completion_handler_;
   std::unique_ptr<NetworkBurstProcessor> burst_processor_;
 

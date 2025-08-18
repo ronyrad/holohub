@@ -37,7 +37,7 @@ using detail::StrategyDetector;
 /**
  * @brief Configuration for strategy detection and memory settings
  */
-struct ConverterConfiguration {
+struct AssemblerConfiguration {
   // Memory configuration
   nvidia::gxf::MemoryStorageType source_memory_type = nvidia::gxf::MemoryStorageType::kDevice;
   nvidia::gxf::MemoryStorageType destination_memory_type = nvidia::gxf::MemoryStorageType::kDevice;
@@ -84,10 +84,10 @@ class MediaFrameAssembler {
   /**
    * @brief Constructor
    * @param frame_provider Provider for frame allocation
-   * @param config Converter configuration
+   * @param config Assembler configuration
    */
   MediaFrameAssembler(std::shared_ptr<IFrameProvider> frame_provider,
-                      const ConverterConfiguration& config = {});
+                      const AssemblerConfiguration& config = {});
 
   /**
    * @brief Set frame completion handler
@@ -226,7 +226,7 @@ class MediaFrameAssembler {
   std::unique_ptr<IMemoryCopyStrategy> current_strategy_;
 
   // Configuration
-  ConverterConfiguration config_;
+  AssemblerConfiguration config_;
 
   // Callback handlers
   std::shared_ptr<IFrameCompletionHandler> completion_handler_;
@@ -262,9 +262,9 @@ class DefaultFrameCompletionHandler : public IFrameCompletionHandler {
 };
 
 /**
- * @brief Utility functions for converter configuration
+ * @brief Utility functions for assembler configuration
  */
-class ConverterConfigurationHelper {
+class AssemblerConfigurationHelper {
  public:
   /**
    * @brief Create configuration from burst parameters
@@ -273,9 +273,9 @@ class ConverterConfigurationHelper {
    * @param hds_enabled HDS setting
    * @param payload_on_cpu Whether payload is in CPU memory
    * @param frames_on_host Whether frames should be in host memory
-   * @return Converter configuration
+   * @return Assembler configuration
    */
-  static ConverterConfiguration create_from_burst_config(size_t header_stride,
+  static AssemblerConfiguration create_from_burst_config(size_t header_stride,
                                                          size_t payload_stride, bool hds_enabled,
                                                          bool payload_on_cpu, bool frames_on_host);
 
@@ -284,14 +284,14 @@ class ConverterConfigurationHelper {
    * @param force_contiguous Whether to force contiguous strategy
    * @return Test configuration
    */
-  static ConverterConfiguration create_test_config(bool force_contiguous = true);
+  static AssemblerConfiguration create_test_config(bool force_contiguous = true);
 
   /**
    * @brief Validate configuration parameters
    * @param config Configuration to validate
    * @return True if configuration is valid
    */
-  static bool validate_configuration(const ConverterConfiguration& config);
+  static bool validate_configuration(const AssemblerConfiguration& config);
 };
 
 }  // namespace holoscan::ops

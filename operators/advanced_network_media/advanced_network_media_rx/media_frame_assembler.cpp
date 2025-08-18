@@ -51,11 +51,11 @@ std::string convert_state_to_string(FrameState internal_state) {
 // ========================================================================================
 
 MediaFrameAssembler::MediaFrameAssembler(std::shared_ptr<IFrameProvider> frame_provider,
-                                         const ConverterConfiguration& config)
+                                         const AssemblerConfiguration& config)
     : config_(config) {
   // Validate configuration
-  if (!ConverterConfigurationHelper::validate_configuration(config_)) {
-    throw std::invalid_argument("Invalid converter configuration");
+  if (!AssemblerConfigurationHelper::validate_configuration(config_)) {
+    throw std::invalid_argument("Invalid assembler configuration");
   }
 
   // Create state machine
@@ -469,15 +469,15 @@ void DefaultFrameCompletionHandler::on_frame_error(const std::string& error_mess
 }
 
 // ========================================================================================
-// ConverterConfigurationHelper Implementation
+// AssemblerConfigurationHelper Implementation
 // ========================================================================================
 
-ConverterConfiguration ConverterConfigurationHelper::create_from_burst_config(size_t header_stride,
+AssemblerConfiguration AssemblerConfigurationHelper::create_from_burst_config(size_t header_stride,
                                                                               size_t payload_stride,
                                                                               bool hds_enabled,
                                                                               bool payload_on_cpu,
                                                                               bool frames_on_host) {
-  ConverterConfiguration config;
+  AssemblerConfiguration config;
 
   config.header_stride_size = header_stride;
   config.payload_stride_size = payload_stride;
@@ -495,8 +495,8 @@ ConverterConfiguration ConverterConfigurationHelper::create_from_burst_config(si
   return config;
 }
 
-ConverterConfiguration ConverterConfigurationHelper::create_test_config(bool force_contiguous) {
-  ConverterConfiguration config;
+AssemblerConfiguration AssemblerConfigurationHelper::create_test_config(bool force_contiguous) {
+  AssemblerConfiguration config;
 
   config.source_memory_type = nvidia::gxf::MemoryStorageType::kHost;
   config.destination_memory_type = nvidia::gxf::MemoryStorageType::kHost;
@@ -509,7 +509,7 @@ ConverterConfiguration ConverterConfigurationHelper::create_test_config(bool for
   return config;
 }
 
-bool ConverterConfigurationHelper::validate_configuration(const ConverterConfiguration& config) {
+bool AssemblerConfigurationHelper::validate_configuration(const AssemblerConfiguration& config) {
   // Basic validation
   if (config.enable_strategy_detection && config.force_contiguous_strategy) {
     HOLOSCAN_LOG_ERROR(

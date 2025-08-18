@@ -10,9 +10,9 @@
 namespace holoscan::ops {
 
 NetworkBurstProcessor::NetworkBurstProcessor(
-    std::shared_ptr<MediaFrameAssembler> converter)
-    : converter_(converter) {
-  if (!converter_) {
+    std::shared_ptr<MediaFrameAssembler> assembler)
+    : assembler_(assembler) {
+  if (!assembler_) {
     throw std::invalid_argument("MediaFrameAssembler cannot be null");
   }
 }
@@ -23,20 +23,20 @@ void NetworkBurstProcessor::process_burst(BurstParams* burst, bool hds_enabled) 
   }
 
   // Configure converter with burst parameters on first burst
-  configure_converter_from_burst(burst);
+  configure_assembler_from_burst(burst);
 
   // Process all packets in the burst through state machine
   process_packets_in_burst(burst, hds_enabled);
 }
 
-void NetworkBurstProcessor::configure_converter_from_burst(BurstParams* burst) {
+void NetworkBurstProcessor::configure_assembler_from_burst(BurstParams* burst) {
   // Access burst extended info from custom_burst_data
   const auto* burst_info =
       reinterpret_cast<const AnoBurstExtendedInfo*>(&(burst->hdr.custom_burst_data));
 
   if (!configuration_initialized_) {
     // Configure converter with burst parameters
-    converter_->configure_burst_parameters(
+    assembler_->configure_burst_parameters(
         burst_info->header_stride_size, burst_info->payload_stride_size, burst_info->hds_on);
 
     // Configure memory types based on burst info
@@ -47,7 +47,7 @@ void NetworkBurstProcessor::configure_converter_from_burst(BurstParams* burst) {
     // Destination type is determined by frame allocation in the operator
     nvidia::gxf::MemoryStorageType dst_type = nvidia::gxf::MemoryStorageType::kDevice;
 
-    converter_->configure_memory_types(src_type, dst_type);
+    assembler_->configure_memory_types(src_type, dst_type);
 
     configuration_initialized_ = true;
 
@@ -76,7 +76,7 @@ void NetworkBurstProcessor::process_packets_in_burst(BurstParams* burst, bool hd
                        rtp_params.payload_size,
                        static_cast<void*>(payload));
 
-      converter_->process_incoming_packet(rtp_params, payload);
+      assembler_->process_incoming_packet(rtp_params, payload);
 
       PACKET_TRACE_LOG("Processed packet {}/{}: seq={}, m_bit={}, size={}",
                        i + 1,

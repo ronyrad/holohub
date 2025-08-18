@@ -301,9 +301,9 @@ class RxOperatorFrameCompletionHandler : public IFrameCompletionHandler {
 
 ## Configuration and Customization
 
-### Converter Configuration
+### Assembler Configuration
 ```cpp
-struct ConverterConfiguration {
+struct AssemblerConfiguration {
     // Memory configuration
     nvidia::gxf::MemoryStorageType source_memory_type;
     nvidia::gxf::MemoryStorageType destination_memory_type;
