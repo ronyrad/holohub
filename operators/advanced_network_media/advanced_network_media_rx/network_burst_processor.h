@@ -7,11 +7,24 @@
 #define OPERATORS_ADVANCED_NETWORK_MEDIA_RX_NETWORK_BURST_PROCESSOR_H_
 
 #include <memory>
-#include "media_frame_assembler.h"
+#include "holoscan/logger/logger.hpp"
 #include "advanced_network/common.h"
 #include "advanced_network/managers/rivermax/rivermax_ano_data_types.h"
+#include "media_frame_assembler.h"
 
 namespace holoscan::ops {
+
+/**
+ * @brief Result structure for packet data extraction
+ */
+struct PacketExtractionResult {
+  uint8_t* payload = nullptr;      ///< Pointer to packet payload data
+  RtpParams rtp_params;            ///< Extracted RTP parameters
+  bool success = false;            ///< Whether extraction was successful
+  
+  /// Implicit conversion to bool for easy error checking
+  explicit operator bool() const { return success && payload != nullptr; }
+};
 
 using namespace holoscan::advanced_network;
 
@@ -38,7 +51,7 @@ class NetworkBurstProcessor {
 
  private:
   /**
-   * @brief Configure assembler with burst parameters
+   * @brief Configure assembler with burst parameters  
    * @param burst The burst containing configuration info
    */
   void configure_assembler_from_burst(BurstParams* burst);
@@ -55,11 +68,9 @@ class NetworkBurstProcessor {
    * @param burst The burst containing packets
    * @param packet_index Index of packet in burst
    * @param hds_enabled Whether HDS is enabled
-   * @param rtp_params Output RTP parameters
-   * @return Pointer to packet payload
+   * @return PacketExtractionResult containing payload pointer, RTP parameters, and success status
    */
-  uint8_t* extract_packet_data(BurstParams* burst, size_t packet_index, bool hds_enabled,
-                               RtpParams& rtp_params);
+  PacketExtractionResult extract_packet_data(BurstParams* burst, size_t packet_index, bool hds_enabled);
 
  private:
   // Constants for packet array indexing

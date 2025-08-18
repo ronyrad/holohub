@@ -472,11 +472,11 @@ void DefaultFrameCompletionHandler::on_frame_error(const std::string& error_mess
 // AssemblerConfigurationHelper Implementation
 // ========================================================================================
 
-AssemblerConfiguration AssemblerConfigurationHelper::create_from_burst_config(size_t header_stride,
-                                                                              size_t payload_stride,
-                                                                              bool hds_enabled,
-                                                                              bool payload_on_cpu,
-                                                                              bool frames_on_host) {
+AssemblerConfiguration AssemblerConfigurationHelper::create_with_burst_parameters(size_t header_stride,
+                                                                               size_t payload_stride,
+                                                                               bool hds_enabled,
+                                                                               bool payload_on_cpu,
+                                                                               bool frames_on_host) {
   AssemblerConfiguration config;
 
   config.header_stride_size = header_stride;

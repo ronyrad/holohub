@@ -170,7 +170,7 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
    */
   void create_media_frame_assembler() {
     // Create assembler configuration
-    auto config = AssemblerConfigurationHelper::create_from_burst_config(
+    auto config = AssemblerConfigurationHelper::create_with_burst_parameters(
         0,                   // header_stride (will be updated from burst info)
         0,                   // payload_stride (will be updated from burst info)
         parent_.hds_.get(),  // hds_enabled

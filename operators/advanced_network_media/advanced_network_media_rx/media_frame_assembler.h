@@ -275,7 +275,7 @@ class DefaultFrameCompletionHandler : public IFrameCompletionHandler {
 class AssemblerConfigurationHelper {
  public:
   /**
-   * @brief Create configuration from burst parameters
+   * @brief Create configuration with burst parameters
    * @param header_stride Header stride size
    * @param payload_stride Payload stride size
    * @param hds_enabled HDS setting
@@ -283,9 +283,9 @@ class AssemblerConfigurationHelper {
    * @param frames_on_host Whether frames should be in host memory
    * @return Assembler configuration
    */
-  static AssemblerConfiguration create_from_burst_config(size_t header_stride,
-                                                         size_t payload_stride, bool hds_enabled,
-                                                         bool payload_on_cpu, bool frames_on_host);
+  static AssemblerConfiguration create_with_burst_parameters(size_t header_stride,
+                                                            size_t payload_stride, bool hds_enabled,
+                                                            bool payload_on_cpu, bool frames_on_host);
 
   /**
    * @brief Create configuration for testing with forced strategy
