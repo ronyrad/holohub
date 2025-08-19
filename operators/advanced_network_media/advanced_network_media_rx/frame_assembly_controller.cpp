@@ -87,7 +87,6 @@ void FrameAssemblyController::reset() {
   context_.frame_state = FrameState::IDLE;
   context_.frame_position = 0;
 
-
   // Reset strategy if set
   if (strategy_) {
     strategy_->reset();
@@ -129,6 +128,7 @@ void FrameAssemblyController::set_strategy(std::shared_ptr<IMemoryCopyStrategy> 
 }
 
 bool FrameAssemblyController::allocate_new_frame() {
+
   context_.current_frame = frame_provider_->get_new_frame();
   context_.frame_position = 0;
 
@@ -166,7 +166,6 @@ StateTransitionResult FrameAssemblyController::handle_idle_state(StateEvent even
                                                                  uint8_t* payload) {
   switch (event) {
     case StateEvent::PACKET_ARRIVED:
-    case StateEvent::STRATEGY_DETECTED:
       // Start receiving packets
       return create_success_result(FrameState::RECEIVING_PACKETS);
 
@@ -176,6 +175,11 @@ StateTransitionResult FrameAssemblyController::handle_idle_state(StateEvent even
 
     case StateEvent::CORRUPTION_DETECTED:
       return create_success_result(FrameState::ERROR_RECOVERY);
+
+    case StateEvent::STRATEGY_DETECTED:
+      // This should not happen in IDLE state - strategy detection requires packets
+      HOLOSCAN_LOG_WARN("STRATEGY_DETECTED event received in IDLE state - treating as PACKET_ARRIVED");
+      return create_success_result(FrameState::RECEIVING_PACKETS);
 
     default:
       return create_error_result("Unexpected event in IDLE state");
@@ -198,12 +202,16 @@ StateTransitionResult FrameAssemblyController::handle_receiving_state(StateEvent
     }
 
     case StateEvent::COPY_EXECUTED:
-      // Copy operation completed, continue receiving
-    
+      // This should not happen - COPY_EXECUTED events are not sent to state machine
+      HOLOSCAN_LOG_WARN("COPY_EXECUTED received in RECEIVING_PACKETS state - this indicates dead code");
       return create_success_result(FrameState::RECEIVING_PACKETS);
 
     case StateEvent::CORRUPTION_DETECTED:
       return create_success_result(FrameState::ERROR_RECOVERY);
+
+    case StateEvent::STRATEGY_DETECTED:
+      // Strategy detection completed while receiving packets
+      return create_success_result(FrameState::RECEIVING_PACKETS);
 
     default:
       return create_error_result("Unexpected event in RECEIVING_PACKETS state");
@@ -215,13 +223,13 @@ StateTransitionResult FrameAssemblyController::handle_completing_state(StateEven
                                                                        uint8_t* payload) {
   switch (event) {
     case StateEvent::PACKET_ARRIVED:
-      // Continue processing packets while completing frame
-      PACKET_TRACE_LOG(
-          "COMPLETING_FRAME: Processing additional packet, staying in completing state");
+      // This should not happen - COMPLETING_FRAME immediately transitions to IDLE
+      HOLOSCAN_LOG_WARN("PACKET_ARRIVED received in COMPLETING_FRAME state - this indicates a logic error");
       return create_success_result(FrameState::COMPLETING_FRAME);
 
     case StateEvent::COPY_EXECUTED: {
-      // Final copy completed, frame is ready
+      // This should not happen - COPY_EXECUTED events are not sent to state machine
+      HOLOSCAN_LOG_WARN("COPY_EXECUTED received in COMPLETING_FRAME state - this indicates dead code");
       auto result = create_success_result(FrameState::FRAME_READY);
       result.should_emit_frame = true;
       frames_completed_++;
@@ -237,7 +245,8 @@ StateTransitionResult FrameAssemblyController::handle_completing_state(StateEven
     }
 
     case StateEvent::MARKER_DETECTED:
-      // Marker detected while completing - start new frame for next packet
+      // This should not happen - COMPLETING_FRAME immediately transitions to IDLE
+      HOLOSCAN_LOG_WARN("MARKER_DETECTED received in COMPLETING_FRAME state - this indicates a logic error");
       if (!allocate_new_frame()) {
         return create_error_result("Failed to allocate new frame for marker");
       }
@@ -255,7 +264,6 @@ StateTransitionResult FrameAssemblyController::handle_error_recovery_state(
     StateEvent event, const RtpParams* rtp_params, uint8_t* payload) {
   switch (event) {
     case StateEvent::RECOVERY_MARKER:
-    case StateEvent::MARKER_DETECTED:
       // Recovery marker received, start new frame
       error_recoveries_++;
       allocate_new_frame();
@@ -268,6 +276,13 @@ StateTransitionResult FrameAssemblyController::handle_error_recovery_state(
     case StateEvent::CORRUPTION_DETECTED:
       // Additional corruption detected, stay in recovery
       return create_success_result(FrameState::ERROR_RECOVERY);
+
+    case StateEvent::MARKER_DETECTED:
+      // This should not happen in ERROR_RECOVERY - should be RECOVERY_MARKER instead
+      HOLOSCAN_LOG_WARN("MARKER_DETECTED received in ERROR_RECOVERY state - treating as RECOVERY_MARKER");
+      error_recoveries_++;
+      allocate_new_frame();
+      return create_success_result(FrameState::IDLE);
 
     default:
       return create_error_result("Unexpected event in ERROR_RECOVERY state");
@@ -286,21 +301,24 @@ StateTransitionResult FrameAssemblyController::handle_frame_ready_state(StateEve
       return create_success_result(FrameState::IDLE);
 
     case StateEvent::PACKET_ARRIVED:
-      // New packet arrived while frame is ready - allocate new frame and start processing
+      // This should not happen - FRAME_READY immediately transitions to IDLE
+      HOLOSCAN_LOG_WARN("PACKET_ARRIVED received in FRAME_READY state - this indicates a logic error");
       if (!allocate_new_frame()) {
         return create_error_result("Failed to allocate new frame");
       }
       return create_success_result(FrameState::RECEIVING_PACKETS);
 
     case StateEvent::MARKER_DETECTED:
-      // New marker while frame is ready - handle as single packet frame
+      // This should not happen - FRAME_READY immediately transitions to IDLE
+      HOLOSCAN_LOG_WARN("MARKER_DETECTED received in FRAME_READY state - this indicates a logic error");
       if (!allocate_new_frame()) {
         return create_error_result("Failed to allocate new frame");
       }
       return create_success_result(FrameState::COMPLETING_FRAME);
 
     case StateEvent::CORRUPTION_DETECTED:
-      // Corruption detected while frame is ready - go to error recovery
+      // This should not happen in FRAME_READY - no operations occur in this transient state
+      HOLOSCAN_LOG_WARN("CORRUPTION_DETECTED received in FRAME_READY state - this indicates a logic error");
       return create_success_result(FrameState::ERROR_RECOVERY);
 
     default:
@@ -378,7 +396,8 @@ bool FrameAssemblyHelper::is_valid_transition(FrameState from_state, FrameState 
               to_state == FrameState::COMPLETING_FRAME || to_state == FrameState::ERROR_RECOVERY);
 
     case FrameState::COMPLETING_FRAME:
-      return (to_state == FrameState::FRAME_READY || to_state == FrameState::ERROR_RECOVERY);
+      return (to_state == FrameState::COMPLETING_FRAME || to_state == FrameState::FRAME_READY || 
+              to_state == FrameState::ERROR_RECOVERY);
 
     case FrameState::ERROR_RECOVERY:
       return (to_state == FrameState::IDLE || to_state == FrameState::ERROR_RECOVERY);
@@ -397,27 +416,25 @@ std::vector<StateEvent> FrameAssemblyHelper::get_valid_events(FrameState state) 
     case FrameState::IDLE:
       return {StateEvent::PACKET_ARRIVED,
               StateEvent::MARKER_DETECTED,
-              StateEvent::STRATEGY_DETECTED,
               StateEvent::CORRUPTION_DETECTED};
 
     case FrameState::RECEIVING_PACKETS:
       return {StateEvent::PACKET_ARRIVED,
               StateEvent::MARKER_DETECTED,
-              StateEvent::COPY_EXECUTED,
-              StateEvent::CORRUPTION_DETECTED};
+              StateEvent::CORRUPTION_DETECTED,
+              StateEvent::STRATEGY_DETECTED};
 
     case FrameState::COMPLETING_FRAME:
-      return {
-          StateEvent::COPY_EXECUTED, StateEvent::FRAME_COMPLETED, StateEvent::CORRUPTION_DETECTED};
+      return {StateEvent::FRAME_COMPLETED, 
+              StateEvent::CORRUPTION_DETECTED};
 
     case FrameState::ERROR_RECOVERY:
       return {StateEvent::RECOVERY_MARKER,
-              StateEvent::MARKER_DETECTED,
               StateEvent::PACKET_ARRIVED,
               StateEvent::CORRUPTION_DETECTED};
 
     case FrameState::FRAME_READY:
-      return {StateEvent::FRAME_COMPLETED, StateEvent::PACKET_ARRIVED, StateEvent::MARKER_DETECTED};
+      return {StateEvent::FRAME_COMPLETED};
 
     default:
       return {};

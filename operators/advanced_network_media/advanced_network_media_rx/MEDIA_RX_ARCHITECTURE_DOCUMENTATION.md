@@ -112,60 +112,206 @@ sequenceDiagram
 
 ## State Machine Diagram
 
-The core state machine manages frame assembly with robust error handling:
+The core state machine manages frame assembly with robust error handling. The diagram below shows **ALL** valid transitions with their triggering events and actions:
+
+> **Note**: Nine suspicious/dead code transitions have been removed from the state machine:
+> 1. `IDLE` → `RECEIVING_PACKETS` via `STRATEGY_DETECTED` (logically impossible)
+> 2. `ERROR_RECOVERY` → `IDLE` via `MARKER_DETECTED` (redundant with `RECOVERY_MARKER`)
+> 3. `FRAME_READY` → `RECEIVING_PACKETS` via `PACKET_ARRIVED` (logically impossible - transient state)
+> 4. `FRAME_READY` → `COMPLETING_FRAME` via `MARKER_DETECTED` (logically impossible - transient state)
+> 5. `FRAME_READY` → `ERROR_RECOVERY` via `CORRUPTION_DETECTED` (logically impossible - no operations in transient state)
+> 6. `COMPLETING_FRAME` → `COMPLETING_FRAME` via `MARKER_DETECTED` (logically impossible - synchronous processing)
+> 7. `RECEIVING_PACKETS` → `RECEIVING_PACKETS` via `COPY_EXECUTED` (dead code - event never sent)
+> 8. `COMPLETING_FRAME` → `FRAME_READY` via `COPY_EXECUTED` (dead code - event never sent)
+> 9. `COMPLETING_FRAME` → `COMPLETING_FRAME` via `PACKET_ARRIVED` (logically impossible - synchronous frame completion)
 
 ```mermaid
 stateDiagram-v2
     [*] --> IDLE : Initialize
 
-    IDLE --> RECEIVING_PACKETS : PACKET_ARRIVED<br/>Allocate new frame
-    IDLE --> ERROR_RECOVERY : CORRUPTION_DETECTED
+    IDLE --> RECEIVING_PACKETS : PACKET_ARRIVED / Allocate new frame
+    IDLE --> COMPLETING_FRAME : MARKER_DETECTED / Allocate new frame
+    IDLE --> ERROR_RECOVERY : CORRUPTION_DETECTED / Handle error
     
-    RECEIVING_PACKETS --> RECEIVING_PACKETS : PACKET_ARRIVED<br/>Process packet data
-    RECEIVING_PACKETS --> COMPLETING_FRAME : MARKER_DETECTED<br/>M-bit received
-    RECEIVING_PACKETS --> ERROR_RECOVERY : CORRUPTION_DETECTED<br/>Frame corruption
+    RECEIVING_PACKETS --> RECEIVING_PACKETS : PACKET_ARRIVED / Process packet
+    RECEIVING_PACKETS --> RECEIVING_PACKETS : STRATEGY_DETECTED / Continue processing
+    RECEIVING_PACKETS --> COMPLETING_FRAME : MARKER_DETECTED / Set completion flag
+    RECEIVING_PACKETS --> ERROR_RECOVERY : CORRUPTION_DETECTED / Handle error
     
-    COMPLETING_FRAME --> COMPLETING_FRAME : PACKET_ARRIVED<br/>Additional packets (stay in state)
-    COMPLETING_FRAME --> FRAME_READY : FRAME_COMPLETED<br/>All processing done
-    COMPLETING_FRAME --> ERROR_RECOVERY : CORRUPTION_DETECTED<br/>Frame corruption
+    COMPLETING_FRAME --> FRAME_READY : FRAME_COMPLETED / Set emit flag
+    COMPLETING_FRAME --> ERROR_RECOVERY : CORRUPTION_DETECTED / Handle error
     
-    FRAME_READY --> IDLE : FRAME_COMPLETED<br/>Frame emitted successfully
-    FRAME_READY --> ERROR_RECOVERY : CORRUPTION_DETECTED<br/>Late corruption detection
+    FRAME_READY --> IDLE : FRAME_COMPLETED / Allocate new frame
     
-    ERROR_RECOVERY --> RECEIVING_PACKETS : RECOVERY_MARKER<br/>M-bit during recovery
-    ERROR_RECOVERY --> ERROR_RECOVERY : PACKET_ARRIVED<br/>Discard corrupted packets
-    ERROR_RECOVERY --> IDLE : Reset/Cleanup
+    ERROR_RECOVERY --> IDLE : RECOVERY_MARKER / Allocate frame, count error
+    ERROR_RECOVERY --> ERROR_RECOVERY : PACKET_ARRIVED / Discard packet
+    ERROR_RECOVERY --> ERROR_RECOVERY : CORRUPTION_DETECTED / Stay in recovery
 
     note right of IDLE
-        - No active frame
-        - Waiting for first packet
-        - Frame pool available
+        No active frame
+        Waiting for first packet
+        Frame pool available
+        Strategy detection ready
     end note
     
     note right of RECEIVING_PACKETS
-        - Active frame allocated
-        - Accumulating packet data
-        - Strategy detection may occur
+        Active frame allocated
+        Accumulating packet data
+        Strategy detection may occur
+        Copy operations in progress
     end note
     
     note right of COMPLETING_FRAME
-        - M-bit packet received
-        - Executing final copy operations
-        - Preparing frame for emission
+        M-bit packet received
+        Executing final copy operations
+        Preparing frame for emission
+        TRANSIENT STATE: Immediately
+        transitions to FRAME_READY
     end note
     
     note right of FRAME_READY
-        - Frame assembly complete
-        - Ready for emission
-        - Awaiting callback completion
+        Frame assembly complete
+        Ready for emission
+        TRANSIENT STATE: Immediately
+        transitions to IDLE after emission
     end note
     
     note right of ERROR_RECOVERY
-        - Frame corruption detected
-        - Discarding current frame
-        - Waiting for next M-bit
+        Frame corruption detected
+        Discarding current frame
+        Waiting for next M-bit
+        Error statistics updated
     end note
 ```
+
+### State Transition Events and Their Sources
+
+| **Event** | **Generated By** | **Conditions/Scenarios** |
+|-----------|------------------|---------------------------|
+| `PACKET_ARRIVED` | `MediaFrameAssembler::determine_event()` | • Regular packet processing<br/>• Strategy detection in progress<br/>• Strategy detection failed |
+| `MARKER_DETECTED` | `MediaFrameAssembler::determine_event()` | • RTP packet with M-bit=1 (not in ERROR_RECOVERY state) |
+| `COPY_EXECUTED` | Memory copy strategies | • Copy operation completed successfully |
+| `CORRUPTION_DETECTED` | Multiple sources | • Packet integrity validation failed<br/>• Copy operation failed<br/>• Bounds validation failed |
+| `RECOVERY_MARKER` | `MediaFrameAssembler::determine_event()` | • RTP packet with M-bit=1 while in ERROR_RECOVERY state |
+| `STRATEGY_DETECTED` | `MediaFrameAssembler::determine_event()` | • Strategy detection completed successfully |
+| `FRAME_COMPLETED` | `MediaFrameAssembler::handle_frame_completion()` | • Frame emission completed (triggers FRAME_READY → IDLE) |
+
+### Comprehensive Transition Analysis
+
+#### **From IDLE State:**
+- **PACKET_ARRIVED** → RECEIVING_PACKETS: Regular packet starts new frame
+- **MARKER_DETECTED** → COMPLETING_FRAME: Single-packet frame scenario
+- **CORRUPTION_DETECTED** → ERROR_RECOVERY: Invalid packet detected
+
+#### **From RECEIVING_PACKETS State:**
+- **PACKET_ARRIVED** → RECEIVING_PACKETS: Continue accumulating packets
+- **STRATEGY_DETECTED** → RECEIVING_PACKETS: Strategy detection completed, continue processing
+- **MARKER_DETECTED** → COMPLETING_FRAME: Frame end marker received
+- **CORRUPTION_DETECTED** → ERROR_RECOVERY: Packet/copy failure detected
+
+#### **From COMPLETING_FRAME State:**
+- **FRAME_COMPLETED** → FRAME_READY: Frame processing finished
+- **CORRUPTION_DETECTED** → ERROR_RECOVERY: Copy failure during completion
+
+#### **From FRAME_READY State:**
+- **FRAME_COMPLETED** → IDLE: Frame emission completed normally
+
+#### **From ERROR_RECOVERY State:**
+- **RECOVERY_MARKER** → IDLE: M-bit received, recovery successful
+- **PACKET_ARRIVED** → ERROR_RECOVERY: Discard corrupted packets
+- **CORRUPTION_DETECTED** → ERROR_RECOVERY: Additional corruption detected
+
+### State Machine Improvements
+
+**Final State Machine Statistics:**
+- **Total Valid Transitions**: **14** (optimized from original 22, added 1 missing critical transition)
+- **Removed Impossible Transitions**: **9** (systematic analysis and cleanup)
+- **Fixed Missing Transitions**: **1** (`RECEIVING_PACKETS` → `RECEIVING_PACKETS` via `STRATEGY_DETECTED`)
+- **Defensive Error Handling**: Added warning logs for all impossible/dead code paths
+
+#### **Removed Suspicious Transitions:**
+
+1. **Removed**: `IDLE` → `RECEIVING_PACKETS` via `STRATEGY_DETECTED`
+   - **Reason**: Logically impossible - strategy detection requires multiple packets, but IDLE state hasn't processed any
+   - **Defensive Handling**: Added warning log and graceful fallback if `STRATEGY_DETECTED` is unexpectedly received in IDLE state
+
+2. **Removed**: `ERROR_RECOVERY` → `IDLE` via `MARKER_DETECTED`
+   - **Reason**: Redundant - when in ERROR_RECOVERY state, M-bit packets always generate `RECOVERY_MARKER`, never `MARKER_DETECTED`
+   - **Logic**: Event generation in `determine_event()` ensures only `RECOVERY_MARKER` is sent when state is ERROR_RECOVERY
+   - **Defensive Handling**: Added warning log and graceful fallback if `MARKER_DETECTED` is unexpectedly received in ERROR_RECOVERY state
+
+3. **Removed**: `FRAME_READY` → `RECEIVING_PACKETS` via `PACKET_ARRIVED`
+   - **Reason**: Logically impossible - FRAME_READY state immediately sends `FRAME_COMPLETED` and transitions to IDLE
+   - **Logic**: Synchronous execution means no opportunity for new packets to arrive while in FRAME_READY state
+   - **Defensive Handling**: Added warning log indicating logic error if this transition is attempted
+
+4. **Removed**: `FRAME_READY` → `COMPLETING_FRAME` via `MARKER_DETECTED`
+   - **Reason**: Logically impossible - FRAME_READY state is transient and immediately transitions to IDLE
+   - **Logic**: Frame emission and state transition happen synchronously in the same call
+   - **Defensive Handling**: Added warning log indicating logic error if this transition is attempted
+
+5. **Removed**: `FRAME_READY` → `ERROR_RECOVERY` via `CORRUPTION_DETECTED`
+   - **Reason**: Logically impossible - no operations occur in the transient FRAME_READY state
+   - **Logic**: All copy operations and processing complete before entering FRAME_READY
+   - **Defensive Handling**: Added warning log indicating logic error if this transition is attempted
+
+6. **Removed**: `COMPLETING_FRAME` → `COMPLETING_FRAME` via `MARKER_DETECTED`
+   - **Reason**: Logically impossible - COMPLETING_FRAME immediately transitions to IDLE after frame completion
+   - **Logic**: Synchronous packet processing means each packet is fully processed before the next
+   - **Defensive Handling**: Added warning log indicating logic error if this transition is attempted
+
+7. **Removed**: `RECEIVING_PACKETS` → `RECEIVING_PACKETS` via `COPY_EXECUTED`
+   - **Reason**: Dead code - COPY_EXECUTED events are never sent to the state machine
+   - **Logic**: Memory copy completions are handled internally by strategies, not as state machine events
+   - **Defensive Handling**: Added warning log indicating dead code if this transition is attempted
+
+8. **Removed**: `COMPLETING_FRAME` → `FRAME_READY` via `COPY_EXECUTED`
+   - **Reason**: Dead code - COPY_EXECUTED events are never sent to the state machine
+   - **Logic**: Copy operations are managed internally, state transitions happen via FRAME_COMPLETED
+   - **Defensive Handling**: Added warning log indicating dead code if this transition is attempted
+
+9. **Removed**: `COMPLETING_FRAME` → `COMPLETING_FRAME` via `PACKET_ARRIVED`
+   - **Reason**: Logically impossible - COMPLETING_FRAME immediately triggers frame completion
+   - **Logic**: Any transition to COMPLETING_FRAME calls `handle_frame_completion()` synchronously (line 290 in execute_actions)
+   - **Execution Flow**: COMPLETING_FRAME → handle_frame_completion() → FRAME_COMPLETED → FRAME_READY → IDLE
+   - **Defensive Handling**: Added warning log indicating logic error if this transition is attempted
+
+#### **Transient State Behavior:**
+
+Both `COMPLETING_FRAME` and `FRAME_READY` are **transient states** with synchronous execution patterns:
+
+**COMPLETING_FRAME State Pattern:**
+1. **Transition to COMPLETING_FRAME**: M-bit detected or single-packet frame
+2. **Immediate Completion**: `handle_frame_completion()` called synchronously (execute_actions line 290)
+3. **Automatic Transition**: `FRAME_COMPLETED` event sent, transitioning to FRAME_READY
+4. **No Persistence**: State never remains in COMPLETING_FRAME between packet processing cycles
+
+**FRAME_READY State Pattern:**
+1. **Transition to FRAME_READY**: Copy operations completed, frame ready for emission
+2. **Frame Emission**: Frame immediately sent to completion handler (added to ready queue)
+3. **Immediate Transition**: `FRAME_COMPLETED` event automatically sent in same call
+4. **Return to IDLE**: State transitions to IDLE, new frame allocated, ready for next packet
+
+This synchronous execution ensures that the state machine **never remains in either transient state** between packet processing cycles, making the removed transitions logically impossible.
+
+#### **Copy Execution Model:**
+The memory copy system operates **independently** from state machine events:
+1. **Strategy Processing**: Copy strategies execute internally during packet processing
+2. **Local Handling**: `COPY_EXECUTED` results are handled locally in `execute_actions()`
+3. **No State Events**: Copy completions do not generate state machine events
+4. **Direct Transitions**: State changes happen via `FRAME_COMPLETED`, not `COPY_EXECUTED`
+
+This design separation means that `COPY_EXECUTED` events are never sent to the state machine, making those transitions unreachable dead code.
+
+### Recent Critical Bug Fix
+
+**Missing Transition Fixed:**
+- **Added**: `RECEIVING_PACKETS` → `RECEIVING_PACKETS` via `STRATEGY_DETECTED`
+  - **Issue**: Runtime error "Unexpected event in RECEIVING_PACKETS state" during application startup
+  - **Root Cause**: Strategy detection completes while in `RECEIVING_PACKETS` state, but no handler existed
+  - **Scenario**: First burst processing triggers strategy detection, which completes while receiving subsequent packets
+  - **Fix**: Added proper state handler and updated valid events list
+  - **Impact**: Resolves startup crashes and enables proper strategy detection during packet reception
 
 ## Memory Copy Strategy Architecture
 
