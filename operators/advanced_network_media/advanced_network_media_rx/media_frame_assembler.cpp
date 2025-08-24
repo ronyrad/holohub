@@ -35,10 +35,7 @@ std::string convert_state_to_string(FrameState internal_state) {
       return "IDLE";
     case FrameState::RECEIVING_PACKETS:
       return "RECEIVING_PACKETS";
-    case FrameState::COMPLETING_FRAME:
-      return "COMPLETING_FRAME";
-    case FrameState::FRAME_READY:
-      return "FRAME_READY";
+
     case FrameState::ERROR_RECOVERY:
       return "ERROR_RECOVERY";
     default:
@@ -131,6 +128,9 @@ void MediaFrameAssembler::process_incoming_packet(const RtpParams& rtp_params, u
     // Determine appropriate event for this packet
     StateEvent event = determine_event(rtp_params, payload);
 
+    // Check current state before processing for recovery completion detection
+    FrameState previous_state = assembly_controller_->get_frame_state();
+    
     // Process event through assembly controller
     auto result = assembly_controller_->process_event(event, &rtp_params, payload);
 
@@ -140,6 +140,13 @@ void MediaFrameAssembler::process_incoming_packet(const RtpParams& rtp_params, u
       return;
     }
 
+    // Log error recovery state changes
+    if (result.new_frame_state == FrameState::ERROR_RECOVERY) {
+      PACKET_TRACE_LOG("Error recovery active - discarding packets until M-bit marker received");
+    } else if (previous_state == FrameState::ERROR_RECOVERY && result.new_frame_state == FrameState::IDLE) {
+      HOLOSCAN_LOG_INFO("Error recovery completed successfully - resuming normal frame processing");
+    }
+
     // Execute actions based on assembly controller result
     execute_actions(result, rtp_params, payload);
 
@@ -147,6 +154,11 @@ void MediaFrameAssembler::process_incoming_packet(const RtpParams& rtp_params, u
                      rtp_params.sequence_number,
                      static_cast<int>(event),
                      static_cast<int>(result.new_frame_state));
+
+    // Special logging for recovery marker processing
+    if (event == StateEvent::RECOVERY_MARKER) {
+      HOLOSCAN_LOG_INFO("RECOVERY_MARKER event processed - should have exited error recovery");
+    }
 
   } catch (const std::exception& e) {
     std::string error_msg = std::string("Exception in packet processing: ") + e.what();
@@ -219,6 +231,7 @@ StateEvent MediaFrameAssembler::determine_event(const RtpParams& rtp_params, uin
   // Check for M-bit marker first
   if (rtp_params.m_bit) {
     if (assembly_controller_->get_frame_state() == FrameState::ERROR_RECOVERY) {
+      HOLOSCAN_LOG_INFO("M-bit detected during error recovery - generating RECOVERY_MARKER event");
       return StateEvent::RECOVERY_MARKER;
     } else {
       return StateEvent::MARKER_DETECTED;
@@ -260,9 +273,9 @@ void MediaFrameAssembler::execute_actions(const StateTransitionResult& result,
                    result.should_emit_frame,
                    result.should_complete_frame,
                    static_cast<int>(result.new_frame_state));
-  // Strategy processing
-  if ((result.new_frame_state == FrameState::RECEIVING_PACKETS ||
-       result.new_frame_state == FrameState::COMPLETING_FRAME) &&
+  // Strategy processing (skip during error recovery as indicated by state machine)
+  if (result.new_frame_state == FrameState::RECEIVING_PACKETS &&
+      !result.should_skip_strategy_processing &&
       current_strategy_ && payload) {
     StateEvent strategy_result =
         current_strategy_->process_packet(*assembly_controller_, payload, rtp_params.payload_size);
@@ -287,7 +300,7 @@ void MediaFrameAssembler::execute_actions(const StateTransitionResult& result,
   }
 
   // Handle frame completion
-  if (result.should_complete_frame || result.new_frame_state == FrameState::COMPLETING_FRAME) {
+  if (result.should_complete_frame) {
     handle_frame_completion();
   }
 
@@ -297,16 +310,15 @@ void MediaFrameAssembler::execute_actions(const StateTransitionResult& result,
     if (frame && completion_handler_) {
       PACKET_TRACE_LOG("Emitting frame to completion handler");
       completion_handler_->on_frame_completed(frame);
-      statistics_.frames_completed++;
+      // Note: frames_completed is incremented in state controller atomic operation
     }
+  }
 
-    // Signal frame emission complete to transition FRAME_READY -> IDLE
-    PACKET_TRACE_LOG("Sending FRAME_COMPLETED event to transition FRAME_READY -> IDLE");
-    auto emission_result = assembly_controller_->process_event(StateEvent::FRAME_COMPLETED);
-    if (!emission_result.success) {
-      HOLOSCAN_LOG_ERROR("Failed to complete frame emission: {}", emission_result.error_message);
-    } else {
-      PACKET_TRACE_LOG("Successfully transitioned to IDLE state");
+  // Handle new frame allocation (atomic with frame completion)
+  if (result.should_allocate_new_frame) {
+    PACKET_TRACE_LOG("Allocating new frame for next packet sequence");
+    if (!assembly_controller_->allocate_new_frame()) {
+      HOLOSCAN_LOG_ERROR("Failed to allocate new frame after completion");
     }
   }
 }
@@ -381,35 +393,9 @@ void MediaFrameAssembler::handle_frame_completion() {
     }
   }
 
-  // Signal frame completion to assembly controller
-  auto result = assembly_controller_->process_event(StateEvent::FRAME_COMPLETED);
-
-  if (!result.success) {
-    handle_error_recovery("Frame completion validation failed");
-    return;
-  }
-
-  // Handle frame emission if requested by assembly controller
-  if (result.should_emit_frame) {
-    auto frame = assembly_controller_->get_current_frame();
-    if (frame && completion_handler_) {
-      PACKET_TRACE_LOG("Emitting frame to completion handler from handle_frame_completion");
-      completion_handler_->on_frame_completed(frame);
-      statistics_.frames_completed++;
-    }
-
-    // Signal frame emission complete to transition FRAME_READY -> IDLE
-    PACKET_TRACE_LOG(
-        "Sending FRAME_COMPLETED event to transition FRAME_READY -> IDLE from "
-        "handle_frame_completion");
-    auto emission_result = assembly_controller_->process_event(StateEvent::FRAME_COMPLETED);
-    if (!emission_result.success) {
-      HOLOSCAN_LOG_ERROR("Failed to complete frame emission in handle_frame_completion: {}",
-                         emission_result.error_message);
-    } else {
-      PACKET_TRACE_LOG("Successfully transitioned to IDLE state from handle_frame_completion");
-    }
-  }
+  // Frame completion is now handled atomically in state transitions
+  // Frame emission and new frame allocation handled in execute_actions()
+  PACKET_TRACE_LOG("Frame completion copy operations finished");
 }
 
 void MediaFrameAssembler::handle_error_recovery(const std::string& error_message) {
@@ -425,7 +411,7 @@ void MediaFrameAssembler::handle_error_recovery(const std::string& error_message
     current_strategy_->reset();
   }
 
-  HOLOSCAN_LOG_ERROR("Error recovery initiated: {}", error_message);
+  HOLOSCAN_LOG_WARN("Error recovery initiated: {} - discarding packets until M-bit marker", error_message);
 }
 
 void MediaFrameAssembler::update_statistics(StateEvent event) {

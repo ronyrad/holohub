@@ -30,9 +30,7 @@ class IMemoryCopyStrategy;
 enum class FrameState {
   IDLE,               // No active frame, awaiting first packet
   RECEIVING_PACKETS,  // Actively receiving and processing packets
-  COMPLETING_FRAME,   // M-bit received, finalizing frame
-  ERROR_RECOVERY,     // Frame corrupted, waiting for recovery marker
-  FRAME_READY         // Frame complete, ready for emission
+  ERROR_RECOVERY      // Frame corrupted, waiting for recovery marker
 };
 
 /**
@@ -68,6 +66,8 @@ struct StateTransitionResult {
   bool should_execute_copy = false;               // Whether copy operation should be executed
   bool should_complete_frame = false;             // Whether frame completion should be triggered
   bool should_emit_frame = false;                 // Whether frame should be emitted
+  bool should_allocate_new_frame = false;         // Whether new frame should be allocated
+  bool should_skip_strategy_processing = false;   // Whether to skip strategy processing (e.g., during recovery)
   std::string error_message;                      // Error description if success=false
 };
 
@@ -161,12 +161,13 @@ class FrameAssemblyController {
    */
   std::shared_ptr<IMemoryCopyStrategy> get_strategy() const { return strategy_; }
 
- private:
   /**
    * @brief Allocate new frame for processing
    * @return True if allocation succeeded
    */
   bool allocate_new_frame();
+
+ private:
 
   /**
    * @brief Validate frame bounds for operations
@@ -203,16 +204,6 @@ class FrameAssemblyController {
                                                uint8_t* payload);
 
   /**
-   * @brief Handle COMPLETING_FRAME state events
-   * @param event Event to process
-   * @param rtp_params RTP parameters
-   * @param payload Packet payload
-   * @return Transition result
-   */
-  StateTransitionResult handle_completing_state(StateEvent event, const RtpParams* rtp_params,
-                                                uint8_t* payload);
-
-  /**
    * @brief Handle ERROR_RECOVERY state events
    * @param event Event to process
    * @param rtp_params RTP parameters
@@ -221,16 +212,6 @@ class FrameAssemblyController {
    */
   StateTransitionResult handle_error_recovery_state(StateEvent event, const RtpParams* rtp_params,
                                                     uint8_t* payload);
-
-  /**
-   * @brief Handle FRAME_READY state events
-   * @param event Event to process
-   * @param rtp_params RTP parameters
-   * @param payload Packet payload
-   * @return Transition result
-   */
-  StateTransitionResult handle_frame_ready_state(StateEvent event, const RtpParams* rtp_params,
-                                                 uint8_t* payload);
 
   /**
    * @brief Create successful transition result
