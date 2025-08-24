@@ -21,7 +21,7 @@ namespace detail {
 enum class StateEvent;
 struct StateTransitionResult;
 class FrameAssemblyController;
-class StrategyDetector;
+class MemoryCopyStrategyDetector;
 class IMemoryCopyStrategy;
 }  // namespace detail
 
@@ -31,10 +31,10 @@ using detail::IMemoryCopyStrategy;
 using detail::CopyStrategy;
 using detail::StateEvent;
 using detail::StateTransitionResult;
-using detail::StrategyDetector;
+using detail::MemoryCopyStrategyDetector;
 
 /**
- * @brief Configuration for strategy detection and memory settings
+ * @brief Configuration for memory copy strategy detection and memory settings
  */
 struct AssemblerConfiguration {
   // Memory configuration
@@ -47,8 +47,8 @@ struct AssemblerConfiguration {
   bool hds_enabled = false;
 
   // Detection configuration
-  bool force_contiguous_strategy = false;
-  bool enable_strategy_detection = true;
+  bool force_contiguous_memory_copy_strategy = false;
+  bool enable_memory_copy_strategy_detection = true;
 };
 
 /**
@@ -75,13 +75,13 @@ class IFrameCompletionHandler {
  * @brief Frame assembler for converting packets to frames
  *
  * This class provides a clean, assembly controller driven approach to converting
- * network packets into video frames with automatic strategy detection and
+ * network packets into video frames with automatic memory copy strategy detection and
  * robust error handling.
  * 
  * @note Architecture: This class coordinates between three main components:
  *       - FrameAssemblyController: Assembly controller for state transitions
  *       - IMemoryCopyStrategy: Strategy pattern for packet data processing
- *       - StrategyDetector: Automatic detection of optimal copy strategies
+ *       - MemoryCopyStrategyDetector: Automatic detection of optimal copy strategies
  *       
  *       The assembly controller layer focuses purely on state management and does
  *       not directly process packet data, maintaining clean separation of concerns.
@@ -103,7 +103,7 @@ class MediaFrameAssembler {
   void set_completion_handler(std::shared_ptr<IFrameCompletionHandler> handler);
 
   /**
-   * @brief Configure burst parameters for strategy detection
+   * @brief Configure burst parameters for memory copy strategy detection
    * @param header_stride_size Header stride from burst info
    * @param payload_stride_size Payload stride from burst info
    * @param hds_enabled Whether header data split is enabled
@@ -127,9 +127,9 @@ class MediaFrameAssembler {
   void process_incoming_packet(const RtpParams& rtp_params, uint8_t* payload);
 
   /**
-   * @brief Force strategy redetection (for testing or config changes)
+   * @brief Force memory copy strategy redetection (for testing or config changes)
    */
-  void force_strategy_redetection();
+  void force_memory_copy_strategy_redetection();
 
   /**
    * @brief Reset Media Frame Assembler to initial state
@@ -144,7 +144,7 @@ class MediaFrameAssembler {
     size_t packets_processed = 0;
     size_t frames_completed = 0;
     size_t errors_recovered = 0;
-    size_t strategy_redetections = 0;
+    size_t memory_copy_strategy_redetections = 0;
     std::string current_strategy = "UNKNOWN";
     std::string current_frame_state = "IDLE";
     std::string last_error;
@@ -189,18 +189,18 @@ class MediaFrameAssembler {
                        uint8_t* payload);
 
   /**
-   * @brief Handle strategy detection and setup
+   * @brief Handle memory copy strategy detection and setup
    * @param rtp_params RTP packet parameters
    * @param payload Packet payload
-   * @return True if strategy is ready for processing
+   * @return True if memory copy strategy is ready for processing
    */
-  bool handle_strategy_detection(const RtpParams& rtp_params, uint8_t* payload);
+  bool handle_memory_copy_strategy_detection(const RtpParams& rtp_params, uint8_t* payload);
 
   /**
-   * @brief Set up strategy once detection is complete
-   * @param strategy Detected strategy
+   * @brief Set up memory copy strategy once detection is complete
+   * @param strategy Detected memory copy strategy
    */
-  void setup_strategy(std::unique_ptr<IMemoryCopyStrategy> strategy);
+  void setup_memory_copy_strategy(std::unique_ptr<IMemoryCopyStrategy> strategy);
 
   /**
    * @brief Validate packet integrity
@@ -229,8 +229,8 @@ class MediaFrameAssembler {
  private:
   // Core components
   std::unique_ptr<FrameAssemblyController> assembly_controller_;
-  std::unique_ptr<StrategyDetector> strategy_detector_;
-  std::unique_ptr<IMemoryCopyStrategy> current_strategy_;
+  std::unique_ptr<MemoryCopyStrategyDetector> memory_copy_strategy_detector_;
+  std::unique_ptr<IMemoryCopyStrategy> current_copy_strategy_;
 
   // Configuration
   AssemblerConfiguration config_;
@@ -242,7 +242,7 @@ class MediaFrameAssembler {
   mutable Statistics statistics_;
 
   // State tracking
-  bool strategy_detection_active_ = false;
+  bool memory_copy_strategy_detection_active_ = false;
 };
 
 /**
@@ -287,8 +287,8 @@ class AssemblerConfigurationHelper {
                                                             bool payload_on_cpu, bool frames_on_host);
 
   /**
-   * @brief Create configuration for testing with forced strategy
-   * @param force_contiguous Whether to force contiguous strategy
+   * @brief Create configuration for testing with forced memory copy strategy
+   * @param force_contiguous Whether to force contiguous memory copy strategy
    * @return Test configuration
    */
   static AssemblerConfiguration create_test_config(bool force_contiguous = true);

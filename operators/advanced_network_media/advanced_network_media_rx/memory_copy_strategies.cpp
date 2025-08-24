@@ -12,11 +12,11 @@ namespace holoscan::ops {
 namespace detail {
 
 // ========================================================================================
-// StrategyFactory Implementation
+// Memory Copy StrategyFactory Implementation
 // ========================================================================================
 
-std::unique_ptr<StrategyDetector> StrategyFactory::create_detector() {
-  return std::make_unique<StrategyDetector>();
+std::unique_ptr<MemoryCopyStrategyDetector> StrategyFactory::create_detector() {
+  return std::make_unique<MemoryCopyStrategyDetector>();
 }
 
 std::unique_ptr<IMemoryCopyStrategy> StrategyFactory::create_contiguous_strategy(
@@ -33,10 +33,10 @@ std::unique_ptr<IMemoryCopyStrategy> StrategyFactory::create_strided_strategy(
 }
 
 // ========================================================================================
-// StrategyDetector Implementation
+// Memory Copy StrategyDetector Implementation
 // ========================================================================================
 
-void StrategyDetector::configure_burst_parameters(size_t header_stride_size,
+void MemoryCopyStrategyDetector::configure_burst_parameters(size_t header_stride_size,
                                                   size_t payload_stride_size, bool hds_enabled) {
   if (detection_complete_) {
     HOLOSCAN_LOG_DEBUG("Strategy already detected, ignoring burst parameter update");
@@ -65,7 +65,7 @@ void StrategyDetector::configure_burst_parameters(size_t header_stride_size,
       hds_enabled);
 }
 
-bool StrategyDetector::collect_packet(const RtpParams& rtp_params, uint8_t* payload,
+bool MemoryCopyStrategyDetector::collect_packet(const RtpParams& rtp_params, uint8_t* payload,
                                       size_t payload_size) {
   if (detection_complete_) {
     return true;
@@ -92,7 +92,7 @@ bool StrategyDetector::collect_packet(const RtpParams& rtp_params, uint8_t* payl
   return packets_analyzed_ >= DETECTION_PACKET_COUNT;
 }
 
-std::unique_ptr<IMemoryCopyStrategy> StrategyDetector::detect_strategy(
+std::unique_ptr<IMemoryCopyStrategy> MemoryCopyStrategyDetector::detect_strategy(
     nvidia::gxf::MemoryStorageType src_storage_type,
     nvidia::gxf::MemoryStorageType dst_storage_type) {
   if (collected_payloads_.size() < 2) {
@@ -140,7 +140,7 @@ std::unique_ptr<IMemoryCopyStrategy> StrategyDetector::detect_strategy(
   }
 }
 
-void StrategyDetector::reset() {
+void MemoryCopyStrategyDetector::reset() {
   collected_payloads_.clear();
   collected_payload_sizes_.clear();
   collected_sequences_.clear();
@@ -150,7 +150,7 @@ void StrategyDetector::reset() {
   HOLOSCAN_LOG_DEBUG("Strategy detector reset");
 }
 
-std::optional<std::pair<CopyStrategy, StrideInfo>> StrategyDetector::analyze_pattern() {
+std::optional<std::pair<CopyStrategy, StrideInfo>> MemoryCopyStrategyDetector::analyze_pattern() {
   if (collected_payloads_.size() < 2) {
     return std::nullopt;
   }
@@ -206,7 +206,7 @@ std::optional<std::pair<CopyStrategy, StrideInfo>> StrategyDetector::analyze_pat
   stride_info.stride_size = actual_stride;
   stride_info.payload_size = payload_size;
 
-  // Determine strategy
+  // Determine memory copy strategy
   CopyStrategy strategy;
   if (is_exactly_contiguous) {
     strategy = CopyStrategy::CONTIGUOUS;
@@ -225,7 +225,7 @@ std::optional<std::pair<CopyStrategy, StrideInfo>> StrategyDetector::analyze_pat
   return std::make_pair(strategy, stride_info);
 }
 
-bool StrategyDetector::validate_sequence_continuity() const {
+bool MemoryCopyStrategyDetector::validate_sequence_continuity() const {
   if (collected_sequences_.size() < 2) {
     return true;
   }
@@ -247,7 +247,7 @@ bool StrategyDetector::validate_sequence_continuity() const {
   return true;
 }
 
-bool StrategyDetector::detect_buffer_wraparound() const {
+bool MemoryCopyStrategyDetector::detect_buffer_wraparound() const {
   if (collected_payloads_.size() < 2) {
     return false;
   }

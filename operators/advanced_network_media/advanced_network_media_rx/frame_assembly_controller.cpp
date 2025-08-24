@@ -86,7 +86,7 @@ void FrameAssemblyController::reset() {
   context_.frame_state = FrameState::IDLE;
   context_.frame_position = 0;
 
-  // Reset strategy if set
+  // Reset memory copy strategy if set
   if (strategy_) {
     strategy_->reset();
   }
@@ -182,7 +182,7 @@ StateTransitionResult FrameAssemblyController::handle_idle_state(StateEvent even
       return create_success_result(FrameState::ERROR_RECOVERY);
 
     case StateEvent::STRATEGY_DETECTED:
-      // This should not happen in IDLE state - strategy detection requires packets
+      // This should not happen in IDLE state - memory copy strategy detection requires packets
       HOLOSCAN_LOG_WARN("STRATEGY_DETECTED event received in IDLE state - treating as PACKET_ARRIVED");
       return create_success_result(FrameState::RECEIVING_PACKETS);
 
@@ -218,7 +218,7 @@ StateTransitionResult FrameAssemblyController::handle_receiving_state(StateEvent
       return create_success_result(FrameState::ERROR_RECOVERY);
 
     case StateEvent::STRATEGY_DETECTED:
-      // Strategy detection completed while receiving packets
+      // Memory copy strategy detection completed while receiving packets
       return create_success_result(FrameState::RECEIVING_PACKETS);
 
     default:
@@ -244,7 +244,7 @@ StateTransitionResult FrameAssemblyController::handle_error_recovery_state(
       // Stay in recovery state, waiting for marker - packet discarded
       HOLOSCAN_LOG_DEBUG("Packet discarded during error recovery - waiting for M-bit marker");
       auto result = create_success_result(FrameState::ERROR_RECOVERY);
-      result.should_skip_strategy_processing = true;
+      result.should_skip_memory_copy_processing = true;
       return result;
     }
 

@@ -42,7 +42,7 @@ enum class StateEvent {
   COPY_EXECUTED,        // Copy operation completed
   CORRUPTION_DETECTED,  // Frame corruption detected
   RECOVERY_MARKER,      // M-bit received during error recovery
-  STRATEGY_DETECTED,    // Strategy detection completed
+  STRATEGY_DETECTED,    // Memory copy strategy detection completed
   FRAME_COMPLETED       // Frame processing finished
 };
 
@@ -67,7 +67,7 @@ struct StateTransitionResult {
   bool should_complete_frame = false;             // Whether frame completion should be triggered
   bool should_emit_frame = false;                 // Whether frame should be emitted
   bool should_allocate_new_frame = false;         // Whether new frame should be allocated
-  bool should_skip_strategy_processing = false;   // Whether to skip strategy processing (e.g., during recovery)
+  bool should_skip_memory_copy_processing = false;   // Whether to skip memory copy processing (e.g., during recovery)
   std::string error_message;                      // Error description if success=false
 };
 

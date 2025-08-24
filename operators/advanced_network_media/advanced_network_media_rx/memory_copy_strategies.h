@@ -20,7 +20,7 @@ namespace detail {
  * @brief Strategy types for copy operations
  */
 enum class CopyStrategy { 
-  UNKNOWN,     // Strategy not yet determined
+  UNKNOWN,     // Memory copy strategy not yet determined
   CONTIGUOUS,  // Sequential memory copy strategy
   STRIDED      // Strided memory copy for HDS scenarios
 };
@@ -80,7 +80,7 @@ class StrategyFactory {
    * @brief Create strategy detector for pattern analysis
    * @return Strategy detector instance
    */
-  static std::unique_ptr<class StrategyDetector> create_detector();
+  static std::unique_ptr<class MemoryCopyStrategyDetector> create_detector();
 
   /**
    * @brief Create contiguous strategy
@@ -107,7 +107,7 @@ class StrategyFactory {
 /**
  * @brief Strategy detector for analyzing packet patterns
  */
-class StrategyDetector {
+class MemoryCopyStrategyDetector {
  public:
   static constexpr size_t DETECTION_PACKET_COUNT = 4;
 
