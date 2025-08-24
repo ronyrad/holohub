@@ -45,32 +45,18 @@ class NetworkBurstProcessor {
   /**
    * @brief Process a burst of packets
    * @param burst The burst containing packets to process
-   * @param hds_enabled Whether header-data split is enabled
+   * @note Assembler must be configured before calling this method
    */
-  void process_burst(BurstParams* burst, bool hds_enabled);
+  void process_burst(BurstParams* burst);
 
  private:
-  /**
-   * @brief Configure assembler with burst parameters  
-   * @param burst The burst containing configuration info
-   */
-  void configure_assembler_from_burst(BurstParams* burst);
-
-  /**
-   * @brief Process all packets in the burst
-   * @param burst The burst containing packets
-   * @param hds_enabled Whether HDS is enabled
-   */
-  void process_packets_in_burst(BurstParams* burst, bool hds_enabled);
-
   /**
    * @brief Extract RTP header and payload from packet
    * @param burst The burst containing packets
    * @param packet_index Index of packet in burst
-   * @param hds_enabled Whether HDS is enabled
    * @return PacketExtractionResult containing payload pointer, RTP parameters, and success status
    */
-  PacketExtractionResult extract_packet_data(BurstParams* burst, size_t packet_index, bool hds_enabled);
+  PacketExtractionResult extract_packet_data(BurstParams* burst, size_t packet_index);
 
  private:
   // Constants for packet array indexing
@@ -78,7 +64,6 @@ class NetworkBurstProcessor {
   static constexpr int GPU_PKTS = 1;
 
   std::shared_ptr<MediaFrameAssembler> assembler_;
-  bool configuration_initialized_ = false;
 };
 
 }  // namespace holoscan::ops

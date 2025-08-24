@@ -17,54 +17,14 @@ NetworkBurstProcessor::NetworkBurstProcessor(
   }
 }
 
-void NetworkBurstProcessor::process_burst(BurstParams* burst, bool hds_enabled) {
+void NetworkBurstProcessor::process_burst(BurstParams* burst) {
   if (!burst || burst->hdr.hdr.num_pkts == 0) {
     return;
   }
 
-  // Configure assembler on first burst only
-  if (!configuration_initialized_) {
-    configure_assembler_from_burst(burst);
-  }
-
-  // Process all packets in the burst through frame assembler
-  process_packets_in_burst(burst, hds_enabled);
-}
-
-void NetworkBurstProcessor::configure_assembler_from_burst(BurstParams* burst) {
-  // Access burst extended info from custom_burst_data
-  const auto* burst_info =
-      reinterpret_cast<const AnoBurstExtendedInfo*>(&(burst->hdr.custom_burst_data));
-
-  // Configure assembler with burst parameters
-  assembler_->configure_burst_parameters(
-      burst_info->header_stride_size, burst_info->payload_stride_size, burst_info->hds_on);
-
-  // Configure memory types based on burst info
-  nvidia::gxf::MemoryStorageType src_type = burst_info->payload_on_cpu
-                                                ? nvidia::gxf::MemoryStorageType::kHost
-                                                : nvidia::gxf::MemoryStorageType::kDevice;
-
-  // Destination type is determined by frame allocation in the operator
-  nvidia::gxf::MemoryStorageType dst_type = nvidia::gxf::MemoryStorageType::kDevice;
-
-  assembler_->configure_memory_types(src_type, dst_type);
-
-  configuration_initialized_ = true;
-
-  HOLOSCAN_LOG_INFO(
-      "Network burst processor configured: header_stride={}, payload_stride={}, "
-      "hds_on={}, payload_on_cpu={}",
-      burst_info->header_stride_size,
-      burst_info->payload_stride_size,
-      burst_info->hds_on,
-      burst_info->payload_on_cpu);
-}
-
-void NetworkBurstProcessor::process_packets_in_burst(BurstParams* burst, bool hds_enabled) {
   // Process each packet through the frame assembler
   for (size_t i = 0; i < burst->hdr.hdr.num_pkts; ++i) {
-    auto extraction_result = extract_packet_data(burst, i, hds_enabled);
+    auto extraction_result = extract_packet_data(burst, i);
 
     // Skip packet if extraction failed
     if (!extraction_result) {
@@ -91,8 +51,7 @@ void NetworkBurstProcessor::process_packets_in_burst(BurstParams* burst, bool hd
   }
 }
 
-PacketExtractionResult NetworkBurstProcessor::extract_packet_data(BurstParams* burst, size_t packet_index,
-                                                                 bool hds_enabled) {
+PacketExtractionResult NetworkBurstProcessor::extract_packet_data(BurstParams* burst, size_t packet_index) {
   PacketExtractionResult result;
   
   if (packet_index >= burst->hdr.hdr.num_pkts) {
@@ -101,7 +60,11 @@ PacketExtractionResult NetworkBurstProcessor::extract_packet_data(BurstParams* b
     return result;  // success = false, payload = nullptr
   }
 
-  if (hds_enabled) {
+  // Get HDS configuration from burst data
+  const auto* burst_info =
+      reinterpret_cast<const AnoBurstExtendedInfo*>(&(burst->hdr.custom_burst_data));
+
+  if (burst_info->hds_on) {
     // Header-Data Split mode: headers on CPU, payloads on GPU
     uint8_t* header_ptr = reinterpret_cast<uint8_t*>(burst->pkts[CPU_PKTS][packet_index]);
     uint8_t* payload_ptr = reinterpret_cast<uint8_t*>(burst->pkts[GPU_PKTS][packet_index]);

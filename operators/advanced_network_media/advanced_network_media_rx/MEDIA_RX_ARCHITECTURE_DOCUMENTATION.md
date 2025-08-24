@@ -11,7 +11,7 @@ The Advanced Network Media RX Operator is a sophisticated component that receive
 #### Public API (`holoscan::ops` namespace)
 - **`AdvNetworkMediaRxOp`**: Main operator interface, orchestrates the entire reception process
 - **`MediaFrameAssembler`**: High-level frame assembly coordinator with automatic strategy detection
-- **`NetworkBurstProcessor`**: Processes network bursts and extracts individual packets
+- **`NetworkBurstProcessor`**: Processes network bursts and extracts individual packets (pure packet processing)
 - **`IFrameProvider`**: Interface for frame buffer allocation
 - **`IFrameCompletionHandler`**: Callback interface for frame completion events
 
@@ -42,8 +42,16 @@ sequenceDiagram
 
     Net->>RxOp: Network burst arrives
     RxOp->>RxOp: compute() called
-    RxOp->>BurstProc: append_to_frame(burst)
-    BurstProc->>BurstProc: Configure burst parameters (header_stride, payload_stride, HDS)
+    RxOp->>RxOp: append_to_frame(burst)
+    
+    alt First burst (configuration needed)
+        RxOp->>RxOp: configure_assembler_from_burst(burst)
+        RxOp->>RxOp: validate_configuration_consistency()
+        RxOp->>Assembler: configure_burst_parameters()
+        RxOp->>Assembler: configure_memory_types()
+    end
+    
+    RxOp->>BurstProc: process_burst(burst)
     
     Note over BurstProc: Process each packet in burst
     loop For each packet in burst
@@ -455,7 +463,7 @@ struct Statistics {
 |------|--------|----------|
 | `frame_provider.h` | **Frame Allocation** | `IFrameProvider` interface |
 | `media_frame_assembler.h` | **Frame Assembly Coordination** | `MediaFrameAssembler`, `AssemblerConfiguration` |
-| `network_burst_processor.h` | **Network Packet Processing** | `NetworkBurstProcessor`, `PacketExtractionResult` |
+| `network_burst_processor.h` | **Network Packet Processing** | `NetworkBurstProcessor`, `PacketExtractionResult` (pure packet extraction) |
 | `frame_assembly_controller.h` | **State Machine Logic** | `FrameAssemblyController`, `StateEvent`, `FrameState` |
 | `memory_copy_strategies.h` | **Memory Copy Strategies** | `IMemoryCopyStrategy`, `CopyStrategy`, Strategy implementations |
 
@@ -496,6 +504,10 @@ namespace holoscan::ops {
 6. **Dead Code Removal**: Eliminated unused `has_pending_copy` context flag and redundant state checks
 7. **Guard Clause Pattern**: Applied early return patterns in `process_packets_in_burst()` for better readability
 8. **State Machine Simplification**: Merged `COMPLETING_FRAME` and `FRAME_READY` into atomic operations, reducing from 5 states to 3
+9. **Configuration Architecture Overhaul**: Moved configuration responsibility from `NetworkBurstProcessor` to `AdvNetworkMediaRxOp` (owner-driven pattern)
+10. **Function Simplification**: Merged `process_packets_in_burst()` into `process_burst()` for cleaner architecture
+11. **Parameter Cleanup**: Removed redundant `hds_enabled` parameter - now determined from burst data
+12. **Clear Naming**: Renamed all strategy-related variables to explicitly mention "memory copy strategy"
 
 ### Benefits Achieved
 - **✅ Cleaner Dependencies**: Each header has a single, clear responsibility
@@ -517,7 +529,21 @@ namespace holoscan::ops {
 - `PacketExtractionResult`: Replaced mixed return/output parameters with structured return type
 - Individual getters over `get_context()`: Follows principle of least privilege, better encapsulation
 
-#### 3. **Namespace Design**
+#### 3. **Configuration Architecture (Owner-Driven Pattern)**
+- **Problem**: `NetworkBurstProcessor` was configuring `MediaFrameAssembler`, violating separation of concerns
+- **Solution**: Moved configuration to `AdvNetworkMediaRxOp` (the owner of the assembler)
+- **Benefits**: 
+  - ✅ Clear responsibility: Owner configures what it owns
+  - ✅ Single source of truth: Burst data is authoritative
+  - ✅ Validation opportunity: Operator params validated against network reality
+  - ✅ Lazy configuration: Deferred until real network data is available
+
+#### 4. **Function Simplification**
+- **Before**: `process_burst()` → `process_packets_in_burst()` (unnecessary layering)
+- **After**: Single `process_burst()` method with direct packet processing
+- **Benefits**: Cleaner code, better performance, easier to understand
+
+#### 5. **Namespace Design**
 - Public API in `holoscan::ops`: Stable interfaces for external consumption
 - Implementation details in `holoscan::ops::detail`: Internal types subject to change
 
@@ -543,4 +569,12 @@ The Advanced Network Media RX Operator provides a robust, high-performance solut
 - **Simplified State Machine**: 3-state design with atomic frame completion operations
 - **Zero Complexity**: Eliminated all edge cases and impossible transitions
 
-The streamlined state machine approach ensures reliable frame assembly with minimal complexity, while the strategy pattern enables optimal performance across different network configurations. The recent architectural improvements have dramatically enhanced code quality, maintainability, and extensibility while improving the system's performance characteristics through atomic operations and reduced state transition overhead.
+The streamlined state machine approach ensures reliable frame assembly with minimal complexity, while the strategy pattern enables optimal performance across different network configurations. The recent architectural improvements have dramatically enhanced code quality, maintainability, and extensibility while improving the system's performance characteristics through atomic operations, reduced state transition overhead, and clean separation of concerns.
+
+**Latest Improvements (Configuration Architecture Overhaul):**
+- **Owner-Driven Configuration**: Clear responsibility model where `AdvNetworkMediaRxOp` configures its owned `MediaFrameAssembler`
+- **Single Source of Truth**: Burst data is authoritative for network configuration, with operator parameters used for validation
+- **Lazy Configuration**: Configuration deferred until real network data is available, eliminating placeholder values
+- **Function Simplification**: Merged unnecessary function layers for cleaner, more direct code paths
+- **Parameter Cleanup**: Removed redundant parameters that caused configuration conflicts
+- **Clear Naming**: All strategy-related identifiers explicitly mention "memory copy strategy" for clarity

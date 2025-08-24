@@ -166,29 +166,30 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
   }
 
   /**
-   * @brief Creates the media frame assembler
+   * @brief Creates the media frame assembler with minimal configuration
+   * @note Full configuration will be done when first burst arrives
    */
   void create_media_frame_assembler() {
-    // Create assembler configuration
-    auto config = AssemblerConfigurationHelper::create_with_burst_parameters(
-        0,                   // header_stride (will be updated from burst info)
-        0,                   // payload_stride (will be updated from burst info)
-        parent_.hds_.get(),  // hds_enabled
-        false,               // payload_on_cpu (will be updated from burst info)
-        storage_type_ == nvidia::gxf::MemoryStorageType::kHost  // frames_on_host
-    );
+    // Create minimal assembler configuration (will be completed from burst data)
+    auto config = AssemblerConfiguration{};
+    
+    // Set operator-known parameters only
+    config.source_memory_type = nvidia::gxf::MemoryStorageType::kHost;  // Will be updated from burst
+    config.destination_memory_type = storage_type_;
+    config.enable_memory_copy_strategy_detection = true;
+    config.force_contiguous_memory_copy_strategy = false;
 
     // Create frame provider (this class implements IFrameProvider)
     auto frame_provider = std::shared_ptr<IFrameProvider>(this, [](IFrameProvider*) {});
 
-    // Create frame assembler
+    // Create frame assembler with minimal config
     assembler_ = std::make_shared<MediaFrameAssembler>(frame_provider, config);
 
     // Create completion handler
     completion_handler_ = std::make_shared<RxOperatorFrameCompletionHandler>(this);
     assembler_->set_completion_handler(completion_handler_);
 
-    HOLOSCAN_LOG_INFO("Media frame assembler initialized");
+    HOLOSCAN_LOG_INFO("Media frame assembler created with minimal configuration");
   }
 
   /**
@@ -294,6 +295,12 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
    * @param burst The burst containing packets to process.
    */
   void append_to_frame(BurstParams* burst) {
+    // Configure assembler on first burst
+    if (!assembler_configured_) {
+      configure_assembler_from_burst(burst);
+      assembler_configured_ = true;
+    }
+
     size_t ready_frames_before = ready_frames_.size();
 
     PACKET_TRACE_LOG("Processing burst: ready_frames_before={}, queue_size={}, burst_packets={}",
@@ -301,7 +308,7 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
                      bursts_awaiting_cleanup_.size(),
                      burst->hdr.hdr.num_pkts);
 
-    burst_processor_->process_burst(burst, parent_.hds_.get());
+    burst_processor_->process_burst(burst);
 
     size_t ready_frames_after = ready_frames_.size();
 
@@ -399,6 +406,59 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
   size_t get_frame_size() const override { return frame_size_; }
 
  private:
+  /**
+   * @brief Configure assembler with burst parameters and validate against operator parameters
+   * @param burst The burst containing configuration info
+   */
+  void configure_assembler_from_burst(BurstParams* burst) {
+    // Access burst extended info from custom_burst_data
+    const auto* burst_info =
+        reinterpret_cast<const AnoBurstExtendedInfo*>(&(burst->hdr.custom_burst_data));
+
+    // Validate operator parameters against burst data
+    validate_configuration_consistency(burst_info);
+
+    // Configure assembler with burst parameters
+    assembler_->configure_burst_parameters(
+        burst_info->header_stride_size, burst_info->payload_stride_size, burst_info->hds_on);
+
+    // Configure memory types based on burst info
+    nvidia::gxf::MemoryStorageType src_type = burst_info->payload_on_cpu
+                                                  ? nvidia::gxf::MemoryStorageType::kHost
+                                                  : nvidia::gxf::MemoryStorageType::kDevice;
+
+    assembler_->configure_memory_types(src_type, storage_type_);
+
+    HOLOSCAN_LOG_INFO(
+        "Assembler configured from burst: header_stride={}, payload_stride={}, "
+        "hds_on={}, payload_on_cpu={}, src_memory={}, dst_memory={}",
+        burst_info->header_stride_size,
+        burst_info->payload_stride_size,
+        burst_info->hds_on,
+        burst_info->payload_on_cpu,
+        static_cast<int>(src_type),
+        static_cast<int>(storage_type_));
+  }
+
+  /**
+   * @brief Validate consistency between operator parameters and burst configuration
+   * @param burst_info The burst configuration data
+   */
+  void validate_configuration_consistency(const AnoBurstExtendedInfo* burst_info) {
+    // Validate HDS configuration
+    bool operator_hds = parent_.hds_.get();
+    bool burst_hds = burst_info->hds_on;
+    
+    if (operator_hds != burst_hds) {
+      HOLOSCAN_LOG_WARN(
+          "HDS configuration mismatch: operator parameter={}, burst data={} - using burst data as authoritative",
+          operator_hds, burst_hds);
+    }
+
+    HOLOSCAN_LOG_DEBUG("Configuration validation completed: operator_hds={}, burst_hds={}", 
+                       operator_hds, burst_hds);
+  }
+
   AdvNetworkMediaRxOp& parent_;
   int port_id_;
 
@@ -418,6 +478,7 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
   size_t frame_size_;
   OutputFormatType output_format_{OutputFormatType::VIDEO_BUFFER};
   nvidia::gxf::MemoryStorageType storage_type_{nvidia::gxf::MemoryStorageType::kDevice};
+  bool assembler_configured_ = false;  ///< Whether assembler has been configured from burst data
 };
 
 // ========================================================================================
