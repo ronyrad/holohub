@@ -51,9 +51,10 @@ void NetworkBurstProcessor::process_burst(BurstParams* burst) {
   }
 }
 
-PacketExtractionResult NetworkBurstProcessor::extract_packet_data(BurstParams* burst, size_t packet_index) {
+PacketExtractionResult NetworkBurstProcessor::extract_packet_data(BurstParams* burst,
+                                                                  size_t packet_index) {
   PacketExtractionResult result;
-  
+
   if (packet_index >= burst->hdr.hdr.num_pkts) {
     HOLOSCAN_LOG_ERROR(
         "Packet index {} out of range (max: {})", packet_index, burst->hdr.hdr.num_pkts);

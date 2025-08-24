@@ -19,7 +19,7 @@ namespace detail {
 /**
  * @brief Strategy types for copy operations
  */
-enum class CopyStrategy { 
+enum class CopyStrategy {
   UNKNOWN,     // Memory copy strategy not yet determined
   CONTIGUOUS,  // Sequential memory copy strategy
   STRIDED      // Strided memory copy for HDS scenarios
@@ -27,7 +27,7 @@ enum class CopyStrategy {
 
 /**
  * @brief Strategy interface for memory copy operations
- * 
+ *
  * This interface defines how different memory copy strategies handle packet data.
  * While it coordinates with FrameAssemblyController, it belongs in the memory copy
  * domain because its primary responsibility is memory transfer optimization.

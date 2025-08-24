@@ -59,7 +59,8 @@ MediaFrameAssembler::MediaFrameAssembler(std::shared_ptr<IFrameProvider> frame_p
   assembly_controller_ = std::make_unique<FrameAssemblyController>(frame_provider);
 
   // Create memory copy strategy detector if needed
-  if (config_.enable_memory_copy_strategy_detection && !config_.force_contiguous_memory_copy_strategy) {
+  if (config_.enable_memory_copy_strategy_detection &&
+      !config_.force_contiguous_memory_copy_strategy) {
     memory_copy_strategy_detector_ = StrategyFactory::create_detector();
     memory_copy_strategy_detection_active_ = true;
   } else if (config_.force_contiguous_memory_copy_strategy) {
@@ -114,7 +115,8 @@ void MediaFrameAssembler::configure_memory_types(nvidia::gxf::MemoryStorageType 
       current_copy_strategy_ =
           StrategyFactory::create_contiguous_strategy(source_type, destination_type);
     }
-    // Note: For strided memory copy strategy, we would need the stride info, so we'd trigger redetection
+    // Note: For strided memory copy strategy, we would need the stride info, so we'd trigger
+    // redetection
 
     setup_memory_copy_strategy(std::move(current_copy_strategy_));
   }
@@ -130,7 +132,7 @@ void MediaFrameAssembler::process_incoming_packet(const RtpParams& rtp_params, u
 
     // Check current state before processing for recovery completion detection
     FrameState previous_state = assembly_controller_->get_frame_state();
-    
+
     // Process event through assembly controller
     auto result = assembly_controller_->process_event(event, &rtp_params, payload);
 
@@ -143,7 +145,8 @@ void MediaFrameAssembler::process_incoming_packet(const RtpParams& rtp_params, u
     // Log error recovery state changes
     if (result.new_frame_state == FrameState::ERROR_RECOVERY) {
       PACKET_TRACE_LOG("Error recovery active - discarding packets until M-bit marker received");
-    } else if (previous_state == FrameState::ERROR_RECOVERY && result.new_frame_state == FrameState::IDLE) {
+    } else if (previous_state == FrameState::ERROR_RECOVERY &&
+               result.new_frame_state == FrameState::IDLE) {
       HOLOSCAN_LOG_INFO("Error recovery completed successfully - resuming normal frame processing");
     }
 
@@ -159,7 +162,6 @@ void MediaFrameAssembler::process_incoming_packet(const RtpParams& rtp_params, u
     if (event == StateEvent::RECOVERY_MARKER) {
       HOLOSCAN_LOG_INFO("RECOVERY_MARKER event processed - should have exited error recovery");
     }
-
   } catch (const std::exception& e) {
     std::string error_msg = std::string("Exception in packet processing: ") + e.what();
     HOLOSCAN_LOG_ERROR("{}", error_msg);
@@ -184,8 +186,8 @@ void MediaFrameAssembler::reset() {
 
   if (memory_copy_strategy_detector_) {
     memory_copy_strategy_detector_->reset();
-    memory_copy_strategy_detection_active_ =
-        config_.enable_memory_copy_strategy_detection && !config_.force_contiguous_memory_copy_strategy;
+    memory_copy_strategy_detection_active_ = config_.enable_memory_copy_strategy_detection &&
+                                             !config_.force_contiguous_memory_copy_strategy;
   }
 
   if (config_.force_contiguous_memory_copy_strategy) {
@@ -206,7 +208,8 @@ void MediaFrameAssembler::reset() {
 
 MediaFrameAssembler::Statistics MediaFrameAssembler::get_statistics() const {
   // Update current state information
-  statistics_.current_frame_state = convert_state_to_string(assembly_controller_->get_frame_state());
+  statistics_.current_frame_state =
+      convert_state_to_string(assembly_controller_->get_frame_state());
 
   if (current_copy_strategy_) {
     statistics_.current_strategy = convert_strategy_to_string(current_copy_strategy_->get_type());
@@ -245,10 +248,11 @@ StateEvent MediaFrameAssembler::determine_event(const RtpParams& rtp_params, uin
 
   // Check if we're in memory copy strategy detection phase
   if (memory_copy_strategy_detection_active_ && memory_copy_strategy_detector_) {
-    if (memory_copy_strategy_detector_->collect_packet(rtp_params, payload, rtp_params.payload_size)) {
+    if (memory_copy_strategy_detector_->collect_packet(
+            rtp_params, payload, rtp_params.payload_size)) {
       // Enough packets collected, attempt memory copy strategy detection
-      auto detected_strategy = memory_copy_strategy_detector_->detect_strategy(config_.source_memory_type,
-                                                                   config_.destination_memory_type);
+      auto detected_strategy = memory_copy_strategy_detector_->detect_strategy(
+          config_.source_memory_type, config_.destination_memory_type);
 
       if (detected_strategy) {
         setup_memory_copy_strategy(std::move(detected_strategy));
@@ -275,10 +279,9 @@ void MediaFrameAssembler::execute_actions(const StateTransitionResult& result,
                    static_cast<int>(result.new_frame_state));
   // Memory copy strategy processing (skip during error recovery as indicated by state machine)
   if (result.new_frame_state == FrameState::RECEIVING_PACKETS &&
-      !result.should_skip_memory_copy_processing &&
-      current_copy_strategy_ && payload) {
-    StateEvent copy_strategy_result =
-        current_copy_strategy_->process_packet(*assembly_controller_, payload, rtp_params.payload_size);
+      !result.should_skip_memory_copy_processing && current_copy_strategy_ && payload) {
+    StateEvent copy_strategy_result = current_copy_strategy_->process_packet(
+        *assembly_controller_, payload, rtp_params.payload_size);
 
     if (copy_strategy_result == StateEvent::CORRUPTION_DETECTED) {
       handle_error_recovery("Memory copy strategy detected corruption");
@@ -291,7 +294,8 @@ void MediaFrameAssembler::execute_actions(const StateTransitionResult& result,
   // Execute pending copies if requested
   if (result.should_execute_copy && current_copy_strategy_) {
     if (current_copy_strategy_->has_accumulated_data()) {
-      StateEvent copy_result = current_copy_strategy_->execute_accumulated_copy(*assembly_controller_);
+      StateEvent copy_result =
+          current_copy_strategy_->execute_accumulated_copy(*assembly_controller_);
       if (copy_result == StateEvent::CORRUPTION_DETECTED) {
         handle_error_recovery("Copy execution failed");
         return;
@@ -323,16 +327,18 @@ void MediaFrameAssembler::execute_actions(const StateTransitionResult& result,
   }
 }
 
-bool MediaFrameAssembler::handle_memory_copy_strategy_detection(const RtpParams& rtp_params, uint8_t* payload) {
+bool MediaFrameAssembler::handle_memory_copy_strategy_detection(const RtpParams& rtp_params,
+                                                                uint8_t* payload) {
   if (!memory_copy_strategy_detection_active_ || !memory_copy_strategy_detector_) {
     return true;  // No detection needed or memory copy strategy already available
   }
 
   // Collect packet for analysis
-  if (memory_copy_strategy_detector_->collect_packet(rtp_params, payload, rtp_params.payload_size)) {
+  if (memory_copy_strategy_detector_->collect_packet(
+          rtp_params, payload, rtp_params.payload_size)) {
     // Attempt memory copy strategy detection
-    auto detected_strategy = memory_copy_strategy_detector_->detect_strategy(config_.source_memory_type,
-                                                                 config_.destination_memory_type);
+    auto detected_strategy = memory_copy_strategy_detector_->detect_strategy(
+        config_.source_memory_type, config_.destination_memory_type);
 
     if (detected_strategy) {
       setup_memory_copy_strategy(std::move(detected_strategy));
@@ -350,11 +356,13 @@ bool MediaFrameAssembler::handle_memory_copy_strategy_detection(const RtpParams&
   return false;
 }
 
-void MediaFrameAssembler::setup_memory_copy_strategy(std::unique_ptr<IMemoryCopyStrategy> strategy) {
+void MediaFrameAssembler::setup_memory_copy_strategy(
+    std::unique_ptr<IMemoryCopyStrategy> strategy) {
   current_copy_strategy_ = std::move(strategy);
 
-  // Note: For the old interface compatibility, we would set the memory copy strategy in the assembly controller
-  // but since IMemoryCopyStrategy is different from IPacketCopyStrategy, we manage it here
+  // Note: For the old interface compatibility, we would set the memory copy strategy in the
+  // assembly controller but since IMemoryCopyStrategy is different from IPacketCopyStrategy, we
+  // manage it here
 
   if (current_copy_strategy_) {
     HOLOSCAN_LOG_INFO(
@@ -386,7 +394,8 @@ bool MediaFrameAssembler::validate_packet_integrity(const RtpParams& rtp_params)
 void MediaFrameAssembler::handle_frame_completion() {
   // Execute any accumulated copy operations
   if (current_copy_strategy_ && current_copy_strategy_->has_accumulated_data()) {
-    StateEvent copy_result = current_copy_strategy_->execute_accumulated_copy(*assembly_controller_);
+    StateEvent copy_result =
+        current_copy_strategy_->execute_accumulated_copy(*assembly_controller_);
     if (copy_result == StateEvent::CORRUPTION_DETECTED) {
       handle_error_recovery("Final copy operation failed");
       return;
@@ -411,7 +420,8 @@ void MediaFrameAssembler::handle_error_recovery(const std::string& error_message
     current_copy_strategy_->reset();
   }
 
-  HOLOSCAN_LOG_WARN("Error recovery initiated: {} - discarding packets until M-bit marker", error_message);
+  HOLOSCAN_LOG_WARN("Error recovery initiated: {} - discarding packets until M-bit marker",
+                    error_message);
 }
 
 void MediaFrameAssembler::update_statistics(StateEvent event) {
@@ -454,11 +464,9 @@ void DefaultFrameCompletionHandler::on_frame_error(const std::string& error_mess
 // AssemblerConfigurationHelper Implementation
 // ========================================================================================
 
-AssemblerConfiguration AssemblerConfigurationHelper::create_with_burst_parameters(size_t header_stride,
-                                                                               size_t payload_stride,
-                                                                               bool hds_enabled,
-                                                                               bool payload_on_cpu,
-                                                                               bool frames_on_host) {
+AssemblerConfiguration AssemblerConfigurationHelper::create_with_burst_parameters(
+    size_t header_stride, size_t payload_stride, bool hds_enabled, bool payload_on_cpu,
+    bool frames_on_host) {
   AssemblerConfiguration config;
 
   config.header_stride_size = header_stride;
@@ -493,9 +501,11 @@ AssemblerConfiguration AssemblerConfigurationHelper::create_test_config(bool for
 
 bool AssemblerConfigurationHelper::validate_configuration(const AssemblerConfiguration& config) {
   // Basic validation
-  if (config.enable_memory_copy_strategy_detection && config.force_contiguous_memory_copy_strategy) {
+  if (config.enable_memory_copy_strategy_detection &&
+      config.force_contiguous_memory_copy_strategy) {
     HOLOSCAN_LOG_ERROR(
-        "Configuration error: Cannot enable memory copy strategy detection and force contiguous strategy "
+        "Configuration error: Cannot enable memory copy strategy detection and force contiguous "
+        "strategy "
         "simultaneously");
     return false;
   }

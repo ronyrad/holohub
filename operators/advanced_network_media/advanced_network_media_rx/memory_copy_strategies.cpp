@@ -37,7 +37,8 @@ std::unique_ptr<IMemoryCopyStrategy> StrategyFactory::create_strided_strategy(
 // ========================================================================================
 
 void MemoryCopyStrategyDetector::configure_burst_parameters(size_t header_stride_size,
-                                                  size_t payload_stride_size, bool hds_enabled) {
+                                                            size_t payload_stride_size,
+                                                            bool hds_enabled) {
   if (detection_complete_) {
     HOLOSCAN_LOG_DEBUG("Strategy already detected, ignoring burst parameter update");
     return;
@@ -66,7 +67,7 @@ void MemoryCopyStrategyDetector::configure_burst_parameters(size_t header_stride
 }
 
 bool MemoryCopyStrategyDetector::collect_packet(const RtpParams& rtp_params, uint8_t* payload,
-                                      size_t payload_size) {
+                                                size_t payload_size) {
   if (detection_complete_) {
     return true;
   }
@@ -281,8 +282,8 @@ ContiguousMemoryCopyStrategy::ContiguousMemoryCopyStrategy(
       dst_storage_type_(dst_storage_type),
       copy_kind_(CopyOperationHelper::get_copy_kind(src_storage_type, dst_storage_type)) {}
 
-StateEvent ContiguousMemoryCopyStrategy::process_packet(FrameAssemblyController& assembly_controller,
-                                                        uint8_t* payload, size_t payload_size) {
+StateEvent ContiguousMemoryCopyStrategy::process_packet(
+    FrameAssemblyController& assembly_controller, uint8_t* payload, size_t payload_size) {
   // Input validation for packet processing
   if (!payload || payload_size == 0) {
     HOLOSCAN_LOG_ERROR("ContiguousStrategy: Invalid packet data");
@@ -346,7 +347,8 @@ StateEvent ContiguousMemoryCopyStrategy::execute_accumulated_copy(
   return execute_copy(assembly_controller);
 }
 
-StateEvent ContiguousMemoryCopyStrategy::execute_copy(FrameAssemblyController& assembly_controller) {
+StateEvent ContiguousMemoryCopyStrategy::execute_copy(
+    FrameAssemblyController& assembly_controller) {
   if (!has_accumulated_data()) {
     return StateEvent::COPY_EXECUTED;
   }
@@ -437,8 +439,8 @@ StateEvent StridedMemoryCopyStrategy::process_packet(FrameAssemblyController& as
     if (accumulated_packet_count_ > 1) {
       copy_result = execute_strided_copy(assembly_controller);
     } else {
-      copy_result =
-          execute_individual_copy(assembly_controller, first_packet_ptr_, stride_info_.payload_size);
+      copy_result = execute_individual_copy(
+          assembly_controller, first_packet_ptr_, stride_info_.payload_size);
     }
 
     if (copy_result == StateEvent::CORRUPTION_DETECTED) {
@@ -466,7 +468,8 @@ bool StridedMemoryCopyStrategy::has_accumulated_data() const {
   return accumulated_packet_count_ > 0 && first_packet_ptr_ != nullptr;
 }
 
-StateEvent StridedMemoryCopyStrategy::execute_accumulated_copy(FrameAssemblyController& assembly_controller) {
+StateEvent StridedMemoryCopyStrategy::execute_accumulated_copy(
+    FrameAssemblyController& assembly_controller) {
   if (!has_accumulated_data()) {
     return StateEvent::COPY_EXECUTED;
   }
@@ -529,7 +532,8 @@ bool StridedMemoryCopyStrategy::is_stride_maintained(uint8_t* payload, size_t pa
   }
 }
 
-StateEvent StridedMemoryCopyStrategy::execute_strided_copy(FrameAssemblyController& assembly_controller) {
+StateEvent StridedMemoryCopyStrategy::execute_strided_copy(
+    FrameAssemblyController& assembly_controller) {
   if (accumulated_packet_count_ <= 1 || !first_packet_ptr_) {
     return StateEvent::COPY_EXECUTED;
   }

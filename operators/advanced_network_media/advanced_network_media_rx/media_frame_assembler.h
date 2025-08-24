@@ -26,12 +26,12 @@ class IMemoryCopyStrategy;
 }  // namespace detail
 
 // Import detail types for cleaner private method signatures
+using detail::CopyStrategy;
 using detail::FrameAssemblyController;
 using detail::IMemoryCopyStrategy;
-using detail::CopyStrategy;
+using detail::MemoryCopyStrategyDetector;
 using detail::StateEvent;
 using detail::StateTransitionResult;
-using detail::MemoryCopyStrategyDetector;
 
 /**
  * @brief Configuration for memory copy strategy detection and memory settings
@@ -77,12 +77,12 @@ class IFrameCompletionHandler {
  * This class provides a clean, assembly controller driven approach to converting
  * network packets into video frames with automatic memory copy strategy detection and
  * robust error handling.
- * 
+ *
  * @note Architecture: This class coordinates between three main components:
  *       - FrameAssemblyController: Assembly controller for state transitions
  *       - IMemoryCopyStrategy: Strategy pattern for packet data processing
  *       - MemoryCopyStrategyDetector: Automatic detection of optimal copy strategies
- *       
+ *
  *       The assembly controller layer focuses purely on state management and does
  *       not directly process packet data, maintaining clean separation of concerns.
  */
@@ -283,8 +283,9 @@ class AssemblerConfigurationHelper {
    * @return Assembler configuration
    */
   static AssemblerConfiguration create_with_burst_parameters(size_t header_stride,
-                                                            size_t payload_stride, bool hds_enabled,
-                                                            bool payload_on_cpu, bool frames_on_host);
+                                                             size_t payload_stride,
+                                                             bool hds_enabled, bool payload_on_cpu,
+                                                             bool frames_on_host);
 
   /**
    * @brief Create configuration for testing with forced memory copy strategy

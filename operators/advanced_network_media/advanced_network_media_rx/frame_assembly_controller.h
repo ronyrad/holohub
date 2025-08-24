@@ -67,8 +67,9 @@ struct StateTransitionResult {
   bool should_complete_frame = false;             // Whether frame completion should be triggered
   bool should_emit_frame = false;                 // Whether frame should be emitted
   bool should_allocate_new_frame = false;         // Whether new frame should be allocated
-  bool should_skip_memory_copy_processing = false;   // Whether to skip memory copy processing (e.g., during recovery)
-  std::string error_message;                      // Error description if success=false
+  bool should_skip_memory_copy_processing =
+      false;                  // Whether to skip memory copy processing (e.g., during recovery)
+  std::string error_message;  // Error description if success=false
 };
 
 /**
@@ -80,7 +81,7 @@ struct FrameAssemblyContext {
   std::shared_ptr<FrameBufferBase> current_frame;  // Active frame buffer
 };
 
-// Forward declaration - interface defined in memory_copy_strategies.h  
+// Forward declaration - interface defined in memory_copy_strategies.h
 class IMemoryCopyStrategy;
 
 /**
@@ -89,7 +90,7 @@ class IMemoryCopyStrategy;
  * This class provides centralized state management for the entire packet-to-frame
  * conversion process, coordinating between strategies, frame allocation, and
  * error handling.
- * 
+ *
  * @note Design Principle: This state machine focuses purely on state transitions
  *       and does not directly process packet data. All methods accept rtp_params
  *       and payload parameters for API consistency and future extensibility, but
@@ -110,7 +111,7 @@ class FrameAssemblyController {
    * @param rtp_params RTP packet parameters (currently unused, reserved for future use)
    * @param payload Packet payload (currently unused, reserved for future use)
    * @return Transition result with actions to execute
-   * 
+   *
    * @note This state machine focuses purely on state transitions based on events.
    *       Packet data processing is handled by the strategy layer. The rtp_params
    *       and payload parameters are provided for API consistency and future
@@ -168,7 +169,6 @@ class FrameAssemblyController {
   bool allocate_new_frame();
 
  private:
-
   /**
    * @brief Validate frame bounds for operations
    * @param required_bytes Number of bytes that will be written

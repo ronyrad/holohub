@@ -42,7 +42,7 @@ StateTransitionResult FrameAssemblyController::process_event(StateEvent event,
   // Parameters are kept for API consistency and future extensibility.
   (void)rtp_params;  // Suppress unused parameter warning
   (void)payload;     // Suppress unused parameter warning
-  
+
   packets_processed_++;
 
   PACKET_TRACE_LOG("Processing event {} in state {}",
@@ -127,7 +127,6 @@ void FrameAssemblyController::set_strategy(std::shared_ptr<IMemoryCopyStrategy> 
 }
 
 bool FrameAssemblyController::allocate_new_frame() {
-
   context_.current_frame = frame_provider_->get_new_frame();
   context_.frame_position = 0;
 
@@ -183,7 +182,8 @@ StateTransitionResult FrameAssemblyController::handle_idle_state(StateEvent even
 
     case StateEvent::STRATEGY_DETECTED:
       // This should not happen in IDLE state - memory copy strategy detection requires packets
-      HOLOSCAN_LOG_WARN("STRATEGY_DETECTED event received in IDLE state - treating as PACKET_ARRIVED");
+      HOLOSCAN_LOG_WARN(
+          "STRATEGY_DETECTED event received in IDLE state - treating as PACKET_ARRIVED");
       return create_success_result(FrameState::RECEIVING_PACKETS);
 
     default:
@@ -211,7 +211,8 @@ StateTransitionResult FrameAssemblyController::handle_receiving_state(StateEvent
 
     case StateEvent::COPY_EXECUTED:
       // This should not happen - COPY_EXECUTED events are not sent to state machine
-      HOLOSCAN_LOG_WARN("COPY_EXECUTED received in RECEIVING_PACKETS state - this indicates dead code");
+      HOLOSCAN_LOG_WARN(
+          "COPY_EXECUTED received in RECEIVING_PACKETS state - this indicates dead code");
       return create_success_result(FrameState::RECEIVING_PACKETS);
 
     case StateEvent::CORRUPTION_DETECTED:
@@ -225,8 +226,6 @@ StateTransitionResult FrameAssemblyController::handle_receiving_state(StateEvent
       return create_error_result("Unexpected event in RECEIVING_PACKETS state");
   }
 }
-
-
 
 StateTransitionResult FrameAssemblyController::handle_error_recovery_state(
     StateEvent event, const RtpParams* rtp_params, uint8_t* payload) {
@@ -254,7 +253,8 @@ StateTransitionResult FrameAssemblyController::handle_error_recovery_state(
 
     case StateEvent::MARKER_DETECTED: {
       // This should not happen in ERROR_RECOVERY - should be RECOVERY_MARKER instead
-      HOLOSCAN_LOG_WARN("MARKER_DETECTED received in ERROR_RECOVERY state - treating as RECOVERY_MARKER");
+      HOLOSCAN_LOG_WARN(
+          "MARKER_DETECTED received in ERROR_RECOVERY state - treating as RECOVERY_MARKER");
       error_recoveries_++;
       auto result = create_success_result(FrameState::IDLE);
       result.should_allocate_new_frame = true;
@@ -265,8 +265,6 @@ StateTransitionResult FrameAssemblyController::handle_error_recovery_state(
       return create_error_result("Unexpected event in ERROR_RECOVERY state");
   }
 }
-
-
 
 StateTransitionResult FrameAssemblyController::create_success_result(FrameState new_state) {
   StateTransitionResult result;
@@ -329,7 +327,7 @@ bool FrameAssemblyHelper::is_valid_transition(FrameState from_state, FrameState 
       return (to_state == FrameState::RECEIVING_PACKETS || to_state == FrameState::ERROR_RECOVERY);
 
     case FrameState::RECEIVING_PACKETS:
-      return (to_state == FrameState::RECEIVING_PACKETS || to_state == FrameState::IDLE || 
+      return (to_state == FrameState::RECEIVING_PACKETS || to_state == FrameState::IDLE ||
               to_state == FrameState::ERROR_RECOVERY);
 
     case FrameState::ERROR_RECOVERY:
@@ -343,9 +341,8 @@ bool FrameAssemblyHelper::is_valid_transition(FrameState from_state, FrameState 
 std::vector<StateEvent> FrameAssemblyHelper::get_valid_events(FrameState state) {
   switch (state) {
     case FrameState::IDLE:
-      return {StateEvent::PACKET_ARRIVED,
-              StateEvent::MARKER_DETECTED,
-              StateEvent::CORRUPTION_DETECTED};
+      return {
+          StateEvent::PACKET_ARRIVED, StateEvent::MARKER_DETECTED, StateEvent::CORRUPTION_DETECTED};
 
     case FrameState::RECEIVING_PACKETS:
       return {StateEvent::PACKET_ARRIVED,
@@ -354,9 +351,8 @@ std::vector<StateEvent> FrameAssemblyHelper::get_valid_events(FrameState state) 
               StateEvent::STRATEGY_DETECTED};
 
     case FrameState::ERROR_RECOVERY:
-      return {StateEvent::RECOVERY_MARKER,
-              StateEvent::PACKET_ARRIVED,
-              StateEvent::CORRUPTION_DETECTED};
+      return {
+          StateEvent::RECOVERY_MARKER, StateEvent::PACKET_ARRIVED, StateEvent::CORRUPTION_DETECTED};
 
     default:
       return {};

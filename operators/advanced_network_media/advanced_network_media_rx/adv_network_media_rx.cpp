@@ -172,9 +172,10 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
   void create_media_frame_assembler() {
     // Create minimal assembler configuration (will be completed from burst data)
     auto config = AssemblerConfiguration{};
-    
+
     // Set operator-known parameters only
-    config.source_memory_type = nvidia::gxf::MemoryStorageType::kHost;  // Will be updated from burst
+    config.source_memory_type =
+        nvidia::gxf::MemoryStorageType::kHost;  // Will be updated from burst
     config.destination_memory_type = storage_type_;
     config.enable_memory_copy_strategy_detection = true;
     config.force_contiguous_memory_copy_strategy = false;
@@ -399,9 +400,7 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
     PACKET_TRACE_LOG("New frame ready: {}", frame->get_size());
   }
 
-  std::shared_ptr<FrameBufferBase> get_new_frame() override {
-    return get_allocated_frame();
-  }
+  std::shared_ptr<FrameBufferBase> get_new_frame() override { return get_allocated_frame(); }
 
   size_t get_frame_size() const override { return frame_size_; }
 
@@ -448,15 +447,18 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
     // Validate HDS configuration
     bool operator_hds = parent_.hds_.get();
     bool burst_hds = burst_info->hds_on;
-    
+
     if (operator_hds != burst_hds) {
       HOLOSCAN_LOG_WARN(
-          "HDS configuration mismatch: operator parameter={}, burst data={} - using burst data as authoritative",
-          operator_hds, burst_hds);
+          "HDS configuration mismatch: operator parameter={}, burst data={} - using burst data as "
+          "authoritative",
+          operator_hds,
+          burst_hds);
     }
 
-    HOLOSCAN_LOG_DEBUG("Configuration validation completed: operator_hds={}, burst_hds={}", 
-                       operator_hds, burst_hds);
+    HOLOSCAN_LOG_DEBUG("Configuration validation completed: operator_hds={}, burst_hds={}",
+                       operator_hds,
+                       burst_hds);
   }
 
   AdvNetworkMediaRxOp& parent_;

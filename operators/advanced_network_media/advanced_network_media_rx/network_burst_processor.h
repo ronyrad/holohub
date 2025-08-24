@@ -18,10 +18,10 @@ namespace holoscan::ops {
  * @brief Result structure for packet data extraction
  */
 struct PacketExtractionResult {
-  uint8_t* payload = nullptr;      ///< Pointer to packet payload data
-  RtpParams rtp_params;            ///< Extracted RTP parameters
-  bool success = false;            ///< Whether extraction was successful
-  
+  uint8_t* payload = nullptr;  ///< Pointer to packet payload data
+  RtpParams rtp_params;        ///< Extracted RTP parameters
+  bool success = false;        ///< Whether extraction was successful
+
   /// Implicit conversion to bool for easy error checking
   explicit operator bool() const { return success && payload != nullptr; }
 };
