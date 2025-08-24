@@ -215,8 +215,8 @@ MediaFrameAssembler::Statistics MediaFrameAssembler::get_statistics() const {
   return statistics_;
 }
 
-bool MediaFrameAssembler::has_pending_operations() const {
-  return current_copy_strategy_ && current_copy_strategy_->has_pending_operations();
+bool MediaFrameAssembler::has_accumulated_data() const {
+  return current_copy_strategy_ && current_copy_strategy_->has_accumulated_data();
 }
 
 std::shared_ptr<FrameBufferBase> MediaFrameAssembler::get_current_frame() const {
@@ -290,8 +290,8 @@ void MediaFrameAssembler::execute_actions(const StateTransitionResult& result,
 
   // Execute pending copies if requested
   if (result.should_execute_copy && current_copy_strategy_) {
-    if (current_copy_strategy_->has_pending_operations()) {
-      StateEvent copy_result = current_copy_strategy_->execute_pending_copy(*assembly_controller_);
+    if (current_copy_strategy_->has_accumulated_data()) {
+      StateEvent copy_result = current_copy_strategy_->execute_accumulated_copy(*assembly_controller_);
       if (copy_result == StateEvent::CORRUPTION_DETECTED) {
         handle_error_recovery("Copy execution failed");
         return;
@@ -384,9 +384,9 @@ bool MediaFrameAssembler::validate_packet_integrity(const RtpParams& rtp_params)
 }
 
 void MediaFrameAssembler::handle_frame_completion() {
-  // Execute any pending copy operations
-  if (current_copy_strategy_ && current_copy_strategy_->has_pending_operations()) {
-    StateEvent copy_result = current_copy_strategy_->execute_pending_copy(*assembly_controller_);
+  // Execute any accumulated copy operations
+  if (current_copy_strategy_ && current_copy_strategy_->has_accumulated_data()) {
+    StateEvent copy_result = current_copy_strategy_->execute_accumulated_copy(*assembly_controller_);
     if (copy_result == StateEvent::CORRUPTION_DETECTED) {
       handle_error_recovery("Final copy operation failed");
       return;

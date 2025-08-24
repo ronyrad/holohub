@@ -304,7 +304,7 @@ StateEvent ContiguousMemoryCopyStrategy::process_packet(FrameAssemblyController&
     PACKET_TRACE_LOG("ContiguousStrategy: Contiguity break, executing copy for {} bytes",
                      accumulated_size_);
 
-    // Execute pending copy before starting new accumulation
+    // Execute accumulated copy before starting new accumulation
     StateEvent copy_result = execute_copy(assembly_controller);
     if (copy_result == StateEvent::CORRUPTION_DETECTED) {
       return copy_result;
@@ -331,7 +331,7 @@ StateEvent ContiguousMemoryCopyStrategy::process_packet(FrameAssemblyController&
   return StateEvent::PACKET_ARRIVED;
 }
 
-bool ContiguousMemoryCopyStrategy::has_pending_operations() const {
+bool ContiguousMemoryCopyStrategy::has_accumulated_data() const {
   return accumulated_size_ > 0 && accumulated_start_ptr_ != nullptr;
 }
 
@@ -341,13 +341,13 @@ void ContiguousMemoryCopyStrategy::reset() {
   PACKET_TRACE_LOG("ContiguousStrategy: Reset accumulation state");
 }
 
-StateEvent ContiguousMemoryCopyStrategy::execute_pending_copy(
+StateEvent ContiguousMemoryCopyStrategy::execute_accumulated_copy(
     FrameAssemblyController& assembly_controller) {
   return execute_copy(assembly_controller);
 }
 
 StateEvent ContiguousMemoryCopyStrategy::execute_copy(FrameAssemblyController& assembly_controller) {
-  if (!has_pending_operations()) {
+  if (!has_accumulated_data()) {
     return StateEvent::COPY_EXECUTED;
   }
 
@@ -462,12 +462,12 @@ StateEvent StridedMemoryCopyStrategy::process_packet(FrameAssemblyController& as
   return StateEvent::PACKET_ARRIVED;
 }
 
-bool StridedMemoryCopyStrategy::has_pending_operations() const {
+bool StridedMemoryCopyStrategy::has_accumulated_data() const {
   return accumulated_packet_count_ > 0 && first_packet_ptr_ != nullptr;
 }
 
-StateEvent StridedMemoryCopyStrategy::execute_pending_copy(FrameAssemblyController& assembly_controller) {
-  if (!has_pending_operations()) {
+StateEvent StridedMemoryCopyStrategy::execute_accumulated_copy(FrameAssemblyController& assembly_controller) {
+  if (!has_accumulated_data()) {
     return StateEvent::COPY_EXECUTED;
   }
 

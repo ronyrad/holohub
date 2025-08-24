@@ -47,17 +47,17 @@ class IMemoryCopyStrategy {
                                     size_t payload_size) = 0;
 
   /**
-   * @brief Execute pending copy operations
+   * @brief Execute accumulated copy operations
    * @param assembly_controller Reference to frame assembly controller for context updates
    * @return Event indicating copy result
    */
-  virtual StateEvent execute_pending_copy(FrameAssemblyController& assembly_controller) = 0;
+  virtual StateEvent execute_accumulated_copy(FrameAssemblyController& assembly_controller) = 0;
 
   /**
-   * @brief Check if strategy has pending operations
-   * @return True if operations are pending
+   * @brief Check if strategy has accumulated data waiting to be copied
+   * @return True if accumulated data needs to be copied
    */
-  virtual bool has_pending_operations() const = 0;
+  virtual bool has_accumulated_data() const = 0;
 
   /**
    * @brief Get strategy type for debugging/statistics
@@ -206,15 +206,15 @@ class ContiguousMemoryCopyStrategy : public IMemoryCopyStrategy {
   StateEvent process_packet(FrameAssemblyController& assembly_controller, uint8_t* payload,
                             size_t payload_size) override;
 
-  StateEvent execute_pending_copy(FrameAssemblyController& assembly_controller) override;
+  StateEvent execute_accumulated_copy(FrameAssemblyController& assembly_controller) override;
 
-  bool has_pending_operations() const override;
+  bool has_accumulated_data() const override;
   void reset() override;
   CopyStrategy get_type() const override { return CopyStrategy::CONTIGUOUS; }
 
  private:
   /**
-   * @brief Execute pending copy operation
+   * @brief Execute accumulated copy operation
    * @param assembly_controller Frame assembly controller reference
    * @return State event result
    */
@@ -254,9 +254,9 @@ class StridedMemoryCopyStrategy : public IMemoryCopyStrategy {
   StateEvent process_packet(FrameAssemblyController& assembly_controller, uint8_t* payload,
                             size_t payload_size) override;
 
-  StateEvent execute_pending_copy(FrameAssemblyController& assembly_controller) override;
+  StateEvent execute_accumulated_copy(FrameAssemblyController& assembly_controller) override;
 
-  bool has_pending_operations() const override;
+  bool has_accumulated_data() const override;
   void reset() override;
   CopyStrategy get_type() const override { return CopyStrategy::STRIDED; }
 

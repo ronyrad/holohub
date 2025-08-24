@@ -153,10 +153,10 @@ class MediaFrameAssembler {
   Statistics get_statistics() const;
 
   /**
-   * @brief Check if Media Frame Assembler has pending operations
-   * @return True if copy operations are pending
+   * @brief Check if Media Frame Assembler has accumulated data waiting to be copied
+   * @return True if copy operations have accumulated data pending
    */
-  bool has_pending_operations() const;
+  bool has_accumulated_data() const;
 
   /**
    * @brief Get current frame for external operations (debugging)

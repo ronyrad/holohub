@@ -85,8 +85,8 @@ sequenceDiagram
                 StateMachine->>StateMachine: Stay in RECEIVING_PACKETS
             end
         else State: COMPLETING_FRAME
-            alt Strategy has pending operations
-                StateMachine->>Strategy: execute_pending_copy()
+            alt Strategy has accumulated data
+                StateMachine->>Strategy: execute_accumulated_copy()
                 Strategy->>Strategy: Perform cudaMemcpy/cudaMemcpy2D
             end
             StateMachine->>StateMachine: Transition to FRAME_READY
@@ -321,8 +321,8 @@ class IMemoryCopyStrategy {
 public:
     virtual StateEvent process_packet(FrameAssemblyController& controller, 
                                     uint8_t* payload, size_t size) = 0;
-    virtual StateEvent execute_pending_copy(FrameAssemblyController& controller) = 0;
-    virtual bool has_pending_operations() const = 0;
+    virtual StateEvent execute_accumulated_copy(FrameAssemblyController& controller) = 0;
+    virtual bool has_accumulated_data() const = 0;
     virtual CopyStrategy get_type() const = 0;
 };
 
@@ -501,7 +501,7 @@ namespace holoscan::ops {
 3. **Better Domain Separation**: Moved `IFrameProvider` to dedicated `frame_provider.h` for cleaner dependencies
 4. **Strategy Interface Relocation**: Moved `IMemoryCopyStrategy` and `CopyStrategy` to `memory_copy_strategies.h` for proper domain ownership
 5. **Naming Consistency**: Renamed `create_from_burst_config()` to `create_with_burst_parameters()` for clarity
-6. **Dead Code Removal**: Eliminated unused `has_pending_copy` context flag and redundant state checks
+6. **Dead Code Removal**: Eliminated unused context flags and redundant state checks
 7. **Guard Clause Pattern**: Applied early return patterns in `process_packets_in_burst()` for better readability
 8. **State Machine Simplification**: Merged `COMPLETING_FRAME` and `FRAME_READY` into atomic operations, reducing from 5 states to 3
 9. **Configuration Architecture Overhaul**: Moved configuration responsibility from `NetworkBurstProcessor` to `AdvNetworkMediaRxOp` (owner-driven pattern)
