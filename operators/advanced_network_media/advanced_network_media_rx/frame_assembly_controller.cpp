@@ -189,11 +189,24 @@ StateTransitionResult FrameAssemblyController::handle_idle_state(StateEvent even
     case StateEvent::MARKER_DETECTED: {
       // Single packet frame (edge case) - complete atomically
       auto result = create_success_result(FrameState::IDLE);
-      result.should_complete_frame = true;
-      result.should_emit_frame = true;
-      result.should_allocate_new_frame = true;
-      frames_completed_++;
-      return result;
+      
+      if (!context_.current_frame) {
+        // No frame allocated yet - allocate one for this single packet
+        result.should_allocate_new_frame = true;
+        // Don't complete/emit since we just allocated
+        return result;
+      } else {
+        // Frame exists - complete it and allocate new one
+        result.should_complete_frame = true;
+        result.should_emit_frame = true;
+        if (frame_provider_->has_available_frames()) {
+          result.should_allocate_new_frame = true;
+        } else {
+          HOLOSCAN_LOG_WARN("Frame completed but pool is empty - staying in IDLE without new frame");
+        }
+        frames_completed_++;
+        return result;
+      }
     }
 
     case StateEvent::CORRUPTION_DETECTED:
@@ -220,10 +233,15 @@ StateTransitionResult FrameAssemblyController::handle_receiving_state(StateEvent
 
     case StateEvent::MARKER_DETECTED: {
       // Frame completion triggered - complete atomically
+      // Only allocate new frame if pool has available frames
       auto result = create_success_result(FrameState::IDLE);
       result.should_complete_frame = true;
       result.should_emit_frame = true;
-      result.should_allocate_new_frame = true;
+      if (frame_provider_->has_available_frames()) {
+        result.should_allocate_new_frame = true;
+      } else {
+        HOLOSCAN_LOG_WARN("Frame completed but pool is empty - staying in IDLE without new frame");
+      }
       frames_completed_++;
       return result;
     }
@@ -250,19 +268,27 @@ StateTransitionResult FrameAssemblyController::handle_error_recovery_state(
     StateEvent event, const RtpParams* rtp_params, uint8_t* payload) {
   switch (event) {
     case StateEvent::RECOVERY_MARKER: {
-      // Recovery marker received - release any corrupted frame and start new one
-      if (context_.current_frame) {
-        PACKET_TRACE_LOG("Releasing corrupted frame during recovery: size={}, ptr={}", 
-                        context_.current_frame->get_size(),
-                        static_cast<void*>(context_.current_frame->get()));
-        release_current_frame();
+      // Recovery marker received - release any corrupted frame and try to start new one
+      // Only exit recovery if we can allocate a new frame
+      if (frame_provider_->has_available_frames()) {
+        if (context_.current_frame) {
+          PACKET_TRACE_LOG("Releasing corrupted frame during recovery: size={}, ptr={}", 
+                          context_.current_frame->get_size(),
+                          static_cast<void*>(context_.current_frame->get()));
+          release_current_frame();
+        }
+        
+        error_recoveries_++;
+        HOLOSCAN_LOG_INFO("Recovery marker (M-bit) received - exiting error recovery");
+        auto result = create_success_result(FrameState::IDLE);
+        result.should_allocate_new_frame = true;
+        return result;
+      } else {
+        // Stay in recovery if no frames available
+        HOLOSCAN_LOG_WARN("Recovery marker detected but frame pool is empty - staying in recovery");
+        auto result = create_success_result(FrameState::ERROR_RECOVERY);
+        return result;
       }
-      
-      error_recoveries_++;
-      HOLOSCAN_LOG_INFO("Recovery marker (M-bit) received - exiting error recovery");
-      auto result = create_success_result(FrameState::IDLE);
-      result.should_allocate_new_frame = true;
-      return result;
     }
 
     case StateEvent::PACKET_ARRIVED: {
@@ -281,10 +307,18 @@ StateTransitionResult FrameAssemblyController::handle_error_recovery_state(
       // This should not happen in ERROR_RECOVERY - should be RECOVERY_MARKER instead
       HOLOSCAN_LOG_WARN(
           "MARKER_DETECTED received in ERROR_RECOVERY state - treating as RECOVERY_MARKER");
-      error_recoveries_++;
-      auto result = create_success_result(FrameState::IDLE);
-      result.should_allocate_new_frame = true;
-      return result;
+      // Only exit recovery if we can allocate a new frame
+      if (frame_provider_->has_available_frames()) {
+        error_recoveries_++;
+        auto result = create_success_result(FrameState::IDLE);
+        result.should_allocate_new_frame = true;
+        return result;
+      } else {
+        // Stay in recovery if no frames available
+        HOLOSCAN_LOG_WARN("Marker detected but frame pool is empty - staying in recovery");
+        auto result = create_success_result(FrameState::ERROR_RECOVERY);
+        return result;
+      }
     }
 
     default:

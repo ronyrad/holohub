@@ -404,6 +404,10 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
 
   size_t get_frame_size() const override { return frame_size_; }
 
+  bool has_available_frames() const override { 
+    return !frames_pool_.empty(); 
+  }
+
   void return_frame_to_pool(std::shared_ptr<FrameBufferBase> frame) override {
     if (frame) {
       frames_pool_.push_back(frame);

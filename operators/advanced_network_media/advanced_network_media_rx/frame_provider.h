@@ -36,6 +36,12 @@ class IFrameProvider {
   virtual size_t get_frame_size() const = 0;
 
   /**
+   * @brief Check if frames are available for allocation
+   * @return True if frames are available, false if pool is empty
+   */
+  virtual bool has_available_frames() const = 0;
+
+  /**
    * @brief Return a frame back to the pool
    * @param frame Frame to return to pool
    */
