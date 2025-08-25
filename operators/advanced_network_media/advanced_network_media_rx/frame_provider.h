@@ -34,6 +34,12 @@ class IFrameProvider {
    * @return Frame size in bytes
    */
   virtual size_t get_frame_size() const = 0;
+
+  /**
+   * @brief Return a frame back to the pool
+   * @param frame Frame to return to pool
+   */
+  virtual void return_frame_to_pool(std::shared_ptr<FrameBufferBase> frame) = 0;
 };
 
 }  // namespace holoscan::ops

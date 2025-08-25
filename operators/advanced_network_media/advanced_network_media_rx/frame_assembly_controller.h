@@ -168,6 +168,11 @@ class FrameAssemblyController {
    */
   bool allocate_new_frame();
 
+  /**
+   * @brief Release current frame back to the pool
+   */
+  void release_current_frame();
+
  private:
   /**
    * @brief Validate frame bounds for operations

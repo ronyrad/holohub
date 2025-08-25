@@ -28,8 +28,11 @@ FrameAssemblyController::FrameAssemblyController(std::shared_ptr<IFrameProvider>
     throw std::invalid_argument("FrameProvider cannot be null");
   }
 
-  // Initialize with a new frame
-  allocate_new_frame();
+  // Don't allocate frame in constructor - wait for first packet
+  // This prevents reducing the pool size unnecessarily
+  context_.current_frame = nullptr;
+  context_.frame_position = 0;
+  context_.frame_state = FrameState::IDLE;
 
   HOLOSCAN_LOG_DEBUG("FrameAssemblyController initialized");
 }
@@ -91,8 +94,9 @@ void FrameAssemblyController::reset() {
     strategy_->reset();
   }
 
-  // Allocate new frame
-  allocate_new_frame();
+  // Don't allocate frame in reset - wait for first packet
+  // This prevents reducing the pool size unnecessarily
+  context_.current_frame = nullptr;
 
   HOLOSCAN_LOG_DEBUG("Assembly controller reset to initial state");
 }
@@ -139,6 +143,16 @@ bool FrameAssemblyController::allocate_new_frame() {
   return true;
 }
 
+void FrameAssemblyController::release_current_frame() {
+  if (context_.current_frame) {
+    PACKET_TRACE_LOG("Releasing current frame back to pool: size={}", context_.current_frame->get_size());
+    // Return frame to pool through frame provider
+    frame_provider_->return_frame_to_pool(context_.current_frame);
+    context_.current_frame.reset();
+    context_.frame_position = 0;
+  }
+}
+
 bool FrameAssemblyController::validate_frame_bounds(size_t required_bytes) const {
   if (!context_.current_frame) {
     return false;
@@ -163,9 +177,14 @@ StateTransitionResult FrameAssemblyController::handle_idle_state(StateEvent even
                                                                  const RtpParams* rtp_params,
                                                                  uint8_t* payload) {
   switch (event) {
-    case StateEvent::PACKET_ARRIVED:
-      // Start receiving packets
-      return create_success_result(FrameState::RECEIVING_PACKETS);
+    case StateEvent::PACKET_ARRIVED: {
+      // Start receiving packets - allocate frame if we don't have one
+      auto result = create_success_result(FrameState::RECEIVING_PACKETS);
+      if (!context_.current_frame) {
+        result.should_allocate_new_frame = true;
+      }
+      return result;
+    }
 
     case StateEvent::MARKER_DETECTED: {
       // Single packet frame (edge case) - complete atomically
@@ -231,7 +250,14 @@ StateTransitionResult FrameAssemblyController::handle_error_recovery_state(
     StateEvent event, const RtpParams* rtp_params, uint8_t* payload) {
   switch (event) {
     case StateEvent::RECOVERY_MARKER: {
-      // Recovery marker received, start new frame
+      // Recovery marker received - release any corrupted frame and start new one
+      if (context_.current_frame) {
+        PACKET_TRACE_LOG("Releasing corrupted frame during recovery: size={}, ptr={}", 
+                        context_.current_frame->get_size(),
+                        static_cast<void*>(context_.current_frame->get()));
+        release_current_frame();
+      }
+      
       error_recoveries_++;
       HOLOSCAN_LOG_INFO("Recovery marker (M-bit) received - exiting error recovery");
       auto result = create_success_result(FrameState::IDLE);

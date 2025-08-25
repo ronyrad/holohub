@@ -404,6 +404,14 @@ class AdvNetworkMediaRxOpImpl : public IFrameProvider {
 
   size_t get_frame_size() const override { return frame_size_; }
 
+  void return_frame_to_pool(std::shared_ptr<FrameBufferBase> frame) override {
+    if (frame) {
+      frames_pool_.push_back(frame);
+      HOLOSCAN_LOG_INFO("Frame returned to pool: pool_size={}, frame_ptr={}", 
+                        frames_pool_.size(), static_cast<void*>(frame->get()));
+    }
+  }
+
  private:
   /**
    * @brief Configure assembler with burst parameters and validate against operator parameters
