@@ -16,6 +16,7 @@
  */
 
 #include "frame_buffer.h"
+#include "adv_network_media_logging.h"
 
 namespace holoscan::ops {
 
@@ -23,13 +24,13 @@ Status VideoFrameBufferBase::validate_frame_parameters(
     uint32_t expected_width, uint32_t expected_height, size_t expected_frame_size,
     nvidia::gxf::VideoFormat expected_format) const {
   if (width_ != expected_width || height_ != expected_height) {
-    HOLOSCAN_LOG_ERROR(
+    ANM_LOG_ERROR(
         "Resolution mismatch: {}}x{} vs {}}x{}", width_, height_, expected_width, expected_height);
     return Status::INVALID_PARAMETER;
   }
 
   if (frame_size_ != expected_frame_size) {
-    HOLOSCAN_LOG_ERROR("Frame size mismatch: {} vs {}", frame_size_, expected_frame_size);
+    ANM_LOG_ERROR("Frame size mismatch: {} vs {}", frame_size_, expected_frame_size);
     return Status::INVALID_PARAMETER;
   }
 
@@ -58,30 +59,30 @@ Status VideoBufferFrameBuffer::validate_format_compliance(
   if (expected_format == nvidia::gxf::VideoFormat::GXF_VIDEO_FORMAT_NV12_709) {
     if (format_ != nvidia::gxf::VideoFormat::GXF_VIDEO_FORMAT_NV12_709 &&
         format_ != nvidia::gxf::VideoFormat::GXF_VIDEO_FORMAT_YUV420_709) {
-      HOLOSCAN_LOG_ERROR("Invalid NV12_709 format");
+      ANM_LOG_ERROR("Invalid NV12_709 format");
       return Status::INVALID_PARAMETER;
     }
   } else if (expected_format == nvidia::gxf::VideoFormat::GXF_VIDEO_FORMAT_RGB) {
     if (format_ != nvidia::gxf::VideoFormat::GXF_VIDEO_FORMAT_RGB) {
-      HOLOSCAN_LOG_ERROR("Invalid RGB format");
+      ANM_LOG_ERROR("Invalid RGB format");
       return Status::INVALID_PARAMETER;
     }
   } else if (format_ != nvidia::gxf::VideoFormat::GXF_VIDEO_FORMAT_CUSTOM) {
-    HOLOSCAN_LOG_ERROR(
+    ANM_LOG_ERROR(
         "Format mismatch: {} vs {}", static_cast<int>(format_), static_cast<int>(expected_format));
     return Status::INVALID_PARAMETER;
   }
 
   if (expected_format == nvidia::gxf::VideoFormat::GXF_VIDEO_FORMAT_NV12_709) {
     if (width_ % SMPTE_420_ALIGNMENT != 0 || height_ % SMPTE_420_ALIGNMENT != 0) {
-      HOLOSCAN_LOG_ERROR("Resolution not 4:2:0 aligned");
+      ANM_LOG_ERROR("Resolution not 4:2:0 aligned");
       return Status::INVALID_PARAMETER;
     }
   }
 
   for (const auto& plane : planes_) {
     if (plane.stride % SMPTE_STRIDE_ALIGNMENT != 0) {
-      HOLOSCAN_LOG_ERROR("Stride {} not {}-byte aligned", plane.stride, SMPTE_STRIDE_ALIGNMENT);
+      ANM_LOG_ERROR("Stride {} not {}-byte aligned", plane.stride, SMPTE_STRIDE_ALIGNMENT);
       return Status::INVALID_PARAMETER;
     }
   }
@@ -112,20 +113,20 @@ Status TensorFrameBuffer::validate_format_compliance(
     case nvidia::gxf::VideoFormat::GXF_VIDEO_FORMAT_NV12_709:
       if (shape.rank() != 3 || shape.dimension(2) != 2 ||
           tensor_->element_type() != nvidia::gxf::PrimitiveType::kUnsigned8) {
-        HOLOSCAN_LOG_ERROR("Invalid NV12_709 tensor");
+        ANM_LOG_ERROR("Invalid NV12_709 tensor");
         return Status::INVALID_PARAMETER;
       }
       break;
 
     case nvidia::gxf::VideoFormat::GXF_VIDEO_FORMAT_RGB:
       if (shape.rank() != 3 || shape.dimension(2) != 3) {
-        HOLOSCAN_LOG_ERROR("Invalid RGB tensor");
+        ANM_LOG_ERROR("Invalid RGB tensor");
         return Status::INVALID_PARAMETER;
       }
       break;
 
     default:
-      HOLOSCAN_LOG_ERROR("Unsupported tensor format: {}", static_cast<int>(format_));
+      ANM_LOG_ERROR("Unsupported tensor format: {}", static_cast<int>(format_));
       return Status::INVALID_PARAMETER;
   }
   return Status::SUCCESS;
@@ -146,7 +147,7 @@ AllocatedVideoBufferFrameBuffer::AllocatedVideoBufferFrameBuffer(
 Status AllocatedVideoBufferFrameBuffer::validate_format_compliance(
     nvidia::gxf::VideoFormat expected_format) const {
   if (format_ != expected_format) {
-    HOLOSCAN_LOG_ERROR(
+    ANM_LOG_ERROR(
         "Format mismatch: {} vs {}", static_cast<int>(format_), static_cast<int>(expected_format));
     return Status::INVALID_PARAMETER;
   }
@@ -213,18 +214,18 @@ AllocatedTensorFrameBuffer::AllocatedTensorFrameBuffer(
 Status AllocatedTensorFrameBuffer::validate_format_compliance(
     nvidia::gxf::VideoFormat expected_format) const {
   if (format_ != expected_format) {
-    HOLOSCAN_LOG_ERROR(
+    ANM_LOG_ERROR(
         "Format mismatch: {} vs {}", static_cast<int>(format_), static_cast<int>(expected_format));
     return Status::INVALID_PARAMETER;
   }
 
   // Validate channel count based on format
   if (expected_format == nvidia::gxf::VideoFormat::GXF_VIDEO_FORMAT_RGB && channels_ != 3) {
-    HOLOSCAN_LOG_ERROR("Invalid channel count for RGB format: {}", channels_);
+    ANM_LOG_ERROR("Invalid channel count for RGB format: {}", channels_);
     return Status::INVALID_PARAMETER;
   } else if (expected_format == nvidia::gxf::VideoFormat::GXF_VIDEO_FORMAT_NV12_709 &&
              channels_ != 2) {
-    HOLOSCAN_LOG_ERROR("Invalid channel count for NV12_709 format: {}", channels_);
+    ANM_LOG_ERROR("Invalid channel count for NV12_709 format: {}", channels_);
     return Status::INVALID_PARAMETER;
   }
 

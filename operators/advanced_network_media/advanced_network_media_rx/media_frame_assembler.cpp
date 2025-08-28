@@ -5,17 +5,21 @@
 
 #include "media_frame_assembler.h"
 #include "../common/adv_network_media_common.h"
+#include <sstream>
+#include <iomanip>
+#include <string>
+#include <memory>
 
 namespace holoscan::ops {
 
 // Import detail namespace classes for convenience
-using detail::FrameAssemblyController;
-using detail::StrategyFactory;
-using detail::MemoryCopyStrategyDetector;
-using detail::IMemoryCopyStrategy;
-using detail::StateEvent;
 using detail::CopyStrategy;
+using detail::FrameAssemblyController;
 using detail::FrameState;
+using detail::IMemoryCopyStrategy;
+using detail::MemoryCopyStrategyDetector;
+using detail::StateEvent;
+using detail::StrategyFactory;
 
 // Helper functions to convert internal types to strings for statistics
 std::string convert_strategy_to_string(CopyStrategy internal_strategy) {
@@ -71,9 +75,9 @@ MediaFrameAssembler::MediaFrameAssembler(std::shared_ptr<IFrameProvider> frame_p
     memory_copy_strategy_detection_active_ = false;
   }
 
-  HOLOSCAN_LOG_INFO("MediaFrameAssembler initialized: strategy_detection={}, force_contiguous={}",
-                    config_.enable_memory_copy_strategy_detection,
-                    config_.force_contiguous_memory_copy_strategy);
+  ANM_CONFIG_LOG("MediaFrameAssembler initialized: strategy_detection={}, force_contiguous={}",
+                 config_.enable_memory_copy_strategy_detection,
+                 config_.force_contiguous_memory_copy_strategy);
 }
 
 void MediaFrameAssembler::set_completion_handler(std::shared_ptr<IFrameCompletionHandler> handler) {
@@ -92,10 +96,10 @@ void MediaFrameAssembler::configure_burst_parameters(size_t header_stride_size,
         header_stride_size, payload_stride_size, hds_enabled);
   }
 
-  HOLOSCAN_LOG_DEBUG("Burst parameters configured: header_stride={}, payload_stride={}, hds={}",
-                     header_stride_size,
-                     payload_stride_size,
-                     hds_enabled);
+  ANM_CONFIG_LOG("Burst parameters configured: header_stride={}, payload_stride={}, hds={}",
+                 header_stride_size,
+                 payload_stride_size,
+                 hds_enabled);
 }
 
 void MediaFrameAssembler::configure_memory_types(nvidia::gxf::MemoryStorageType source_type,
@@ -103,9 +107,9 @@ void MediaFrameAssembler::configure_memory_types(nvidia::gxf::MemoryStorageType 
   config_.source_memory_type = source_type;
   config_.destination_memory_type = destination_type;
 
-  HOLOSCAN_LOG_DEBUG("Memory types configured: source={}, destination={}",
-                     static_cast<int>(source_type),
-                     static_cast<int>(destination_type));
+  ANM_CONFIG_LOG("Memory types configured: source={}, destination={}",
+                 static_cast<int>(source_type),
+                 static_cast<int>(destination_type));
 
   // If memory copy strategy is already set up, we may need to recreate it with new memory types
   if (current_copy_strategy_ && !memory_copy_strategy_detection_active_) {
@@ -126,6 +130,7 @@ void MediaFrameAssembler::process_incoming_packet(const RtpParams& rtp_params, u
   try {
     // Update statistics
     update_statistics(StateEvent::PACKET_ARRIVED);
+    update_packet_statistics(rtp_params);
 
     // Determine appropriate event for this packet
     StateEvent event = determine_event(rtp_params, payload);
@@ -137,34 +142,36 @@ void MediaFrameAssembler::process_incoming_packet(const RtpParams& rtp_params, u
     auto result = assembly_controller_->process_event(event, &rtp_params, payload);
 
     if (!result.success) {
-      HOLOSCAN_LOG_ERROR("Assembly controller processing failed: {}", result.error_message);
+      ANM_FRAME_ERROR(statistics_.current_frame_number,
+                      "Assembly controller processing failed: {}",
+                      result.error_message);
       handle_error_recovery(result.error_message);
       return;
     }
 
     // Log error recovery state changes
     if (result.new_frame_state == FrameState::ERROR_RECOVERY) {
-      PACKET_TRACE_LOG("Error recovery active - discarding packets until M-bit marker received");
+      ANM_STATE_LOG("Error recovery active - discarding packets until M-bit marker received");
     } else if (previous_state == FrameState::ERROR_RECOVERY &&
                result.new_frame_state == FrameState::IDLE) {
-      HOLOSCAN_LOG_INFO("Error recovery completed successfully - resuming normal frame processing");
+      ANM_STATE_LOG("Error recovery completed successfully - resuming normal frame processing");
     }
 
     // Execute actions based on assembly controller result
     execute_actions(result, rtp_params, payload);
 
-    PACKET_TRACE_LOG("Packet processed successfully: seq={}, event={}, new_state={}",
+    ANM_PACKET_TRACE("Packet processed successfully: seq={}, event={}, new_state={}",
                      rtp_params.sequence_number,
                      static_cast<int>(event),
                      static_cast<int>(result.new_frame_state));
 
     // Special logging for recovery marker processing
     if (event == StateEvent::RECOVERY_MARKER) {
-      HOLOSCAN_LOG_INFO("RECOVERY_MARKER event processed - should have exited error recovery");
+      ANM_STATE_LOG("RECOVERY_MARKER event processed - should have exited error recovery");
     }
   } catch (const std::exception& e) {
     std::string error_msg = std::string("Exception in packet processing: ") + e.what();
-    HOLOSCAN_LOG_ERROR("{}", error_msg);
+    ANM_FRAME_ERROR(statistics_.current_frame_number, "{}", error_msg);
     handle_error_recovery(error_msg);
   }
 }
@@ -177,7 +184,7 @@ void MediaFrameAssembler::force_memory_copy_strategy_redetection() {
     assembly_controller_->set_strategy(nullptr);
     statistics_.memory_copy_strategy_redetections++;
 
-    HOLOSCAN_LOG_INFO("Memory copy strategy redetection forced");
+    ANM_CONFIG_LOG("Memory copy strategy redetection forced");
   }
 }
 
@@ -203,7 +210,7 @@ void MediaFrameAssembler::reset() {
   statistics_.current_frame_state = "IDLE";
   statistics_.last_error.clear();
 
-  HOLOSCAN_LOG_INFO("Media Frame assembler has been reset to initial state");
+  ANM_CONFIG_LOG("Media Frame assembler has been reset to initial state");
 }
 
 MediaFrameAssembler::Statistics MediaFrameAssembler::get_statistics() const {
@@ -234,7 +241,7 @@ StateEvent MediaFrameAssembler::determine_event(const RtpParams& rtp_params, uin
   // Check for M-bit marker first
   if (rtp_params.m_bit) {
     if (assembly_controller_->get_frame_state() == FrameState::ERROR_RECOVERY) {
-      HOLOSCAN_LOG_INFO("M-bit detected during error recovery - generating RECOVERY_MARKER event");
+      ANM_STATE_LOG("M-bit detected during error recovery - generating RECOVERY_MARKER event");
       return StateEvent::RECOVERY_MARKER;
     } else {
       return StateEvent::MARKER_DETECTED;
@@ -273,10 +280,10 @@ StateEvent MediaFrameAssembler::determine_event(const RtpParams& rtp_params, uin
 
 void MediaFrameAssembler::execute_actions(const StateTransitionResult& result,
                                           const RtpParams& rtp_params, uint8_t* payload) {
-  PACKET_TRACE_LOG("execute_actions: should_emit_frame={}, should_complete_frame={}, new_state={}",
-                   result.should_emit_frame,
-                   result.should_complete_frame,
-                   static_cast<int>(result.new_frame_state));
+  ANM_FRAME_TRACE("execute_actions: should_emit_frame={}, should_complete_frame={}, new_state={}",
+                  result.should_emit_frame,
+                  result.should_complete_frame,
+                  static_cast<int>(result.new_frame_state));
   // Memory copy strategy processing (skip during error recovery as indicated by state machine)
   if (result.new_frame_state == FrameState::RECEIVING_PACKETS &&
       !result.should_skip_memory_copy_processing && current_copy_strategy_ && payload) {
@@ -287,7 +294,7 @@ void MediaFrameAssembler::execute_actions(const StateTransitionResult& result,
       handle_error_recovery("Memory copy strategy detected corruption");
       return;
     } else if (copy_strategy_result == StateEvent::COPY_EXECUTED) {
-      PACKET_TRACE_LOG("Memory copy strategy executed operation successfully");
+      ANM_MEMCOPY_TRACE("Memory copy strategy executed operation successfully");
     }
   }
 
@@ -312,7 +319,7 @@ void MediaFrameAssembler::execute_actions(const StateTransitionResult& result,
   if (result.should_emit_frame) {
     auto frame = assembly_controller_->get_current_frame();
     if (frame && completion_handler_) {
-      PACKET_TRACE_LOG("Emitting frame to completion handler");
+      ANM_FRAME_TRACE("Emitting frame to completion handler");
       completion_handler_->on_frame_completed(frame);
       // Note: frames_completed is incremented in state controller atomic operation
     }
@@ -320,9 +327,18 @@ void MediaFrameAssembler::execute_actions(const StateTransitionResult& result,
 
   // Handle new frame allocation (atomic with frame completion)
   if (result.should_allocate_new_frame) {
-    PACKET_TRACE_LOG("Allocating new frame for next packet sequence");
+    ANM_FRAME_TRACE("Allocating new frame for next packet sequence");
     if (!assembly_controller_->allocate_new_frame()) {
-      HOLOSCAN_LOG_ERROR("Failed to allocate new frame after completion");
+      ANM_FRAME_ERROR(statistics_.current_frame_number,
+                      "Failed to allocate new frame after completion");
+    } else {
+      // Starting a new frame - update statistics
+      ANM_STATS_UPDATE(statistics_.current_frame_number++; statistics_.frames_started++;
+                       statistics_.packets_in_current_frame = 0;
+                       statistics_.bytes_in_current_frame = 0;
+                       statistics_.first_sequence_in_frame = 0;);
+
+      ANM_STATS_TRACE("Starting new frame {}", statistics_.current_frame_number);
     }
   }
 }
@@ -345,12 +361,12 @@ bool MediaFrameAssembler::handle_memory_copy_strategy_detection(const RtpParams&
       memory_copy_strategy_detection_active_ = false;
       return true;
     } else {
-      HOLOSCAN_LOG_DEBUG("Strategy detection failed, will retry");
+      ANM_STRATEGY_LOG("Strategy detection failed, will retry");
       return false;
     }
   }
 
-  PACKET_TRACE_LOG("Still collecting packets for strategy detection ({}/{})",
+  ANM_STRATEGY_LOG("Still collecting packets for strategy detection ({}/{})",
                    memory_copy_strategy_detector_->get_packets_analyzed(),
                    MemoryCopyStrategyDetector::DETECTION_PACKET_COUNT);
   return false;
@@ -365,7 +381,7 @@ void MediaFrameAssembler::setup_memory_copy_strategy(
   // manage it here
 
   if (current_copy_strategy_) {
-    HOLOSCAN_LOG_INFO(
+    ANM_CONFIG_LOG(
         "Memory copy strategy setup completed: {}",
         current_copy_strategy_->get_type() == CopyStrategy::CONTIGUOUS ? "CONTIGUOUS" : "STRIDED");
   }
@@ -402,14 +418,33 @@ void MediaFrameAssembler::handle_frame_completion() {
     }
   }
 
-  // Frame completion is now handled atomically in state transitions
-  // Frame emission and new frame allocation handled in execute_actions()
-  PACKET_TRACE_LOG("Frame completion copy operations finished");
+  // Update frame completion statistics
+  ANM_STATS_UPDATE(statistics_.frames_completed++; statistics_.frames_completed_successfully++;
+                   statistics_.last_frame_completion_time = std::chrono::steady_clock::now(););
+
+  ANM_STATS_TRACE("Frame {} completed successfully - {} packets, {} bytes",
+                  statistics_.current_frame_number,
+                  statistics_.packets_in_current_frame,
+                  statistics_.bytes_in_current_frame);
+
+  // Reset current frame statistics for next frame
+  ANM_STATS_UPDATE(statistics_.packets_in_current_frame = 0; statistics_.bytes_in_current_frame = 0;
+                   statistics_.first_sequence_in_frame = 0;);
 }
 
 void MediaFrameAssembler::handle_error_recovery(const std::string& error_message) {
-  statistics_.last_error = error_message;
-  statistics_.errors_recovered++;
+  ANM_STATS_UPDATE(statistics_.last_error = error_message; statistics_.errors_recovered++;
+                   statistics_.error_recovery_cycles++;
+                   statistics_.frames_dropped++;
+                   statistics_.last_error_time = std::chrono::steady_clock::now(););
+
+  // Log dropped frame information
+  ANM_FRAME_WARN(
+      statistics_.current_frame_number,
+      "Error recovery initiated: {} - discarding {} packets, {} bytes - waiting for M-bit marker",
+      error_message,
+      statistics_.packets_in_current_frame,
+      statistics_.bytes_in_current_frame);
 
   if (completion_handler_) {
     completion_handler_->on_frame_error(error_message);
@@ -420,21 +455,150 @@ void MediaFrameAssembler::handle_error_recovery(const std::string& error_message
     current_copy_strategy_->reset();
   }
 
-  HOLOSCAN_LOG_WARN("Error recovery initiated: {} - discarding packets until M-bit marker",
-                    error_message);
+  // Reset current frame statistics since frame is being dropped
+  ANM_STATS_UPDATE(statistics_.packets_in_current_frame = 0; statistics_.bytes_in_current_frame = 0;
+                   statistics_.first_sequence_in_frame = 0;);
 }
 
 void MediaFrameAssembler::update_statistics(StateEvent event) {
   switch (event) {
     case StateEvent::PACKET_ARRIVED:
       statistics_.packets_processed++;
+      ANM_STATS_UPDATE(statistics_.packets_in_current_frame++);
       break;
     case StateEvent::STRATEGY_DETECTED:
-      statistics_.memory_copy_strategy_redetections++;
+      ANM_STATS_UPDATE(statistics_.memory_copy_strategy_redetections++);
+      break;
+    case StateEvent::MARKER_DETECTED:
+      // Frame completion handled elsewhere
+      break;
+    case StateEvent::RECOVERY_MARKER:
+      // Recovery completion handled elsewhere
+      break;
+    case StateEvent::CORRUPTION_DETECTED:
+      ANM_STATS_UPDATE(statistics_.memory_corruption_errors++);
       break;
     default:
       break;
   }
+}
+
+void MediaFrameAssembler::update_packet_statistics(const RtpParams& rtp_params) {
+  ANM_STATS_UPDATE(
+      // Check for sequence discontinuity (only if we have a previous sequence number)
+      if (statistics_.last_sequence_number != 0 && statistics_.packets_processed > 1) {
+        uint32_t expected_seq = statistics_.last_sequence_number + 1;
+        if (rtp_params.sequence_number != expected_seq) {
+          statistics_.sequence_discontinuities++;
+
+          // Check for potential buffer overflow (large gaps)
+          int32_t gap =
+              static_cast<int32_t>(rtp_params.sequence_number) - static_cast<int32_t>(expected_seq);
+
+          // Power-of-2 check for buffer wraparound (524288 = 2^19)
+          if (gap > 16384 && (gap & (gap - 1)) == 0) {
+            statistics_.buffer_overflow_errors++;
+            ANM_FRAME_TRACE(statistics_.current_frame_number,
+                            "Potential RX buffer wraparound detected: RTP sequence gap {} (2^{}) - "
+                            "processing pipeline too slow, cannot keep up with incoming data rate",
+                            gap,
+                            __builtin_ctz(gap));
+          } else {
+            ANM_FRAME_TRACE(statistics_.current_frame_number,
+                            "RTP sequence discontinuity detected: expected {}, got {} (gap of {})",
+                            expected_seq,
+                            rtp_params.sequence_number,
+                            gap);
+          }
+        }
+      }
+
+      // Update sequence tracking
+      statistics_.last_sequence_number = rtp_params.sequence_number;
+
+      // Set first sequence in frame if this is the first packet
+      if (statistics_.first_sequence_in_frame == 0) {
+        statistics_.first_sequence_in_frame = rtp_params.sequence_number;
+      }
+
+      // Update byte count
+      statistics_.bytes_in_current_frame += rtp_params.payload_size;);
+}
+
+// ========================================================================================
+// MediaFrameAssembler Statistics Implementation
+// ========================================================================================
+
+std::string MediaFrameAssembler::get_statistics_summary() const {
+#if ENABLE_STATISTICS_LOGGING
+  std::ostringstream ss;
+  auto stats = get_statistics();
+
+  ss << "MediaFrameAssembler Statistics Summary:\n";
+  ss << "========================================\n";
+
+  // Basic counters
+  ss << "Basic Counters:\n";
+  ss << "  Packets processed: " << stats.packets_processed << "\n";
+  ss << "  Frames completed: " << stats.frames_completed << "\n";
+  ss << "  Errors recovered: " << stats.errors_recovered << "\n";
+  ss << "  Strategy redetections: " << stats.memory_copy_strategy_redetections << "\n";
+
+  // Enhanced frame tracking
+  ss << "\nFrame Tracking:\n";
+  ss << "  Current frame number: " << stats.current_frame_number << "\n";
+  ss << "  Frames started: " << stats.frames_started << "\n";
+  ss << "  Frames dropped: " << stats.frames_dropped << "\n";
+  ss << "  Frames completed successfully: " << stats.frames_completed_successfully << "\n";
+  if (stats.frames_started > 0) {
+    double completion_rate =
+        (double)stats.frames_completed_successfully / stats.frames_started * 100.0;
+    ss << "  Frame completion rate: " << std::fixed << std::setprecision(2) << completion_rate
+       << "%\n";
+  }
+
+  // Enhanced error tracking
+  ss << "\nError Tracking:\n";
+  ss << "  Sequence discontinuities: " << stats.sequence_discontinuities << "\n";
+  ss << "  Buffer overflow errors: " << stats.buffer_overflow_errors << "\n";
+  ss << "  Memory corruption errors: " << stats.memory_corruption_errors << "\n";
+  ss << "  Error recovery cycles: " << stats.error_recovery_cycles << "\n";
+
+  // Current frame metrics
+  ss << "\nCurrent Frame:\n";
+  ss << "  Packets in current frame: " << stats.packets_in_current_frame << "\n";
+  ss << "  Bytes in current frame: " << stats.bytes_in_current_frame << "\n";
+  ss << "  Last sequence number: " << stats.last_sequence_number << "\n";
+  ss << "  First sequence in frame: " << stats.first_sequence_in_frame << "\n";
+
+  // State information
+  ss << "\nState Information:\n";
+  ss << "  Current strategy: " << stats.current_strategy << "\n";
+  ss << "  Current frame state: " << stats.current_frame_state << "\n";
+  if (!stats.last_error.empty()) {
+    ss << "  Last error: " << stats.last_error << "\n";
+  }
+
+  // Timing information
+  auto now = std::chrono::steady_clock::now();
+  if (stats.last_frame_completion_time != std::chrono::steady_clock::time_point{}) {
+    auto time_since_last_frame = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                     now - stats.last_frame_completion_time)
+                                     .count();
+    ss << "\nTiming:\n";
+    ss << "  Time since last frame completion: " << time_since_last_frame << " ms\n";
+  }
+
+  if (stats.last_error_time != std::chrono::steady_clock::time_point{}) {
+    auto time_since_last_error =
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - stats.last_error_time).count();
+    ss << "  Time since last error: " << time_since_last_error << " ms\n";
+  }
+
+  return ss.str();
+#else
+  return "Enhanced statistics disabled for performance (compile with ENABLE_STATISTICS_LOGGING)";
+#endif
 }
 
 // ========================================================================================
@@ -456,7 +620,7 @@ void DefaultFrameCompletionHandler::on_frame_error(const std::string& error_mess
   if (error_callback_) {
     error_callback_(error_message);
   } else {
-    HOLOSCAN_LOG_ERROR("Frame processing error: {}", error_message);
+    ANM_LOG_ERROR("Frame processing error: {}", error_message);
   }
 }
 
@@ -503,7 +667,7 @@ bool AssemblerConfigurationHelper::validate_configuration(const AssemblerConfigu
   // Basic validation
   if (config.enable_memory_copy_strategy_detection &&
       config.force_contiguous_memory_copy_strategy) {
-    HOLOSCAN_LOG_ERROR(
+    ANM_LOG_ERROR(
         "Configuration error: Cannot enable memory copy strategy detection and force contiguous "
         "strategy "
         "simultaneously");
@@ -513,7 +677,7 @@ bool AssemblerConfigurationHelper::validate_configuration(const AssemblerConfigu
   // Stride validation (if detection is enabled)
   if (config.enable_memory_copy_strategy_detection) {
     if (config.header_stride_size == 0 && config.payload_stride_size == 0) {
-      HOLOSCAN_LOG_WARN(
+      ANM_LOG_WARN(
           "Zero stride sizes with strategy detection enabled may affect detection accuracy");
     }
   }

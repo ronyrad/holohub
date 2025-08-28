@@ -45,8 +45,8 @@ target_link_libraries(${PROJECT_NAME}
 
 # Add CUDA support for memory copy strategies
 find_package(CUDAToolkit REQUIRED)
-target_link_libraries(${PROJECT_NAME} 
-    PRIVATE 
+target_link_libraries(${PROJECT_NAME}
+    PRIVATE
     CUDA::cudart
 )
 

@@ -22,12 +22,13 @@
 #include <stddef.h>
 #include <holoscan/holoscan.hpp>
 #include "rtp_params.h"
+#include "adv_network_media_logging.h"
 
 #define CUDA_TRY(stmt)                                                                  \
   {                                                                                     \
     cudaError_t cuda_status = stmt;                                                     \
     if (cudaSuccess != cuda_status) {                                                   \
-      HOLOSCAN_LOG_ERROR("Runtime call {} in line {} of file {} failed with '{}' ({})", \
+      ANM_LOG_ERROR("Runtime call {} in line {} of file {} failed with '{}' ({})", \
                          #stmt,                                                         \
                          __LINE__,                                                      \
                          __FILE__,                                                      \
@@ -36,16 +37,5 @@
       throw std::runtime_error("CUDA operation failed");                                \
     }                                                                                   \
   }
-
-// Packet tracing debug flag - uncomment to enable extensive packet debugging
-// #define ENABLE_PACKET_TRACING
-
-#ifdef ENABLE_PACKET_TRACING
-#define PACKET_TRACE_LOG(fmt, ...) HOLOSCAN_LOG_INFO("[PACKET_TRACE] " fmt, ##__VA_ARGS__)
-#else
-#define PACKET_TRACE_LOG(fmt, ...) \
-  do {                             \
-  } while (0)
-#endif
 
 #endif  // OPERATORS_ADVANCED_NETWORK_MEDIA_COMMON_ADV_NETWORK_MEDIA_COMMON_H_

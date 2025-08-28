@@ -19,6 +19,7 @@
 
 #include "../common/frame_buffer.h"
 #include "../common/video_parameters.h"
+#include "../common/adv_network_media_logging.h"
 #include "adv_network_media_tx.h"
 
 namespace holoscan::ops {
@@ -49,28 +50,28 @@ class AdvNetworkMediaTxOpImpl {
    * for media transmission.
    */
   void initialize() {
-    HOLOSCAN_LOG_INFO("AdvNetworkMediaTxOp::initialize()");
+    ANM_LOG_INFO("AdvNetworkMediaTxOp::initialize()");
     try {
       port_id_ = get_port_id(parent_.interface_name_.get());
       if (port_id_ == -1) {
-        HOLOSCAN_LOG_ERROR("Invalid TX port {} specified in the config",
+        ANM_LOG_ERROR("Invalid TX port {} specified in the config",
           parent_.interface_name_.get());
         exit(1);
       } else {
-        HOLOSCAN_LOG_INFO("TX port {} found", port_id_);
+        ANM_CONFIG_LOG("TX port {} found", port_id_);
       }
 
       video_sampling_ = get_video_sampling_format(parent_.video_format_.get());
       color_bit_depth_ = get_color_bit_depth(parent_.bit_depth_.get());
       frame_size_ = calculate_frame_size(parent_.frame_width_.get(), parent_.frame_height_.get(),
         video_sampling_, color_bit_depth_);
-      HOLOSCAN_LOG_INFO("Expected frame size: {} bytes", frame_size_);
+      ANM_CONFIG_LOG("Expected frame size: {} bytes", frame_size_);
 
       expected_video_format_ = get_expected_gxf_video_format(video_sampling_, color_bit_depth_);
 
-      HOLOSCAN_LOG_INFO("AdvNetworkMediaTxOp::initialize() complete");
+      ANM_LOG_INFO("AdvNetworkMediaTxOp::initialize() complete");
     } catch (const std::exception& e) {
-      HOLOSCAN_LOG_ERROR("Error in AdvNetworkMediaTxOp initialization: {}", e.what());
+      ANM_LOG_ERROR("Error in AdvNetworkMediaTxOp initialization: {}", e.what());
       throw;
     }
   }
@@ -88,13 +89,13 @@ class AdvNetworkMediaTxOpImpl {
         parent_.frame_height_.get(), frame_size_, expected_video_format_);
 
       if (result != Status::SUCCESS) {
-        HOLOSCAN_LOG_ERROR("Video buffer validation failed");
+        ANM_LOG_ERROR("Video buffer validation failed");
         return nullptr;
       }
 
       return std::make_shared<MediaFrame>(std::move(frame));
     } catch (const std::exception& e) {
-      HOLOSCAN_LOG_ERROR("Video buffer error: {}", e.what());
+      ANM_LOG_ERROR("Video buffer error: {}", e.what());
       return nullptr;
     }
   }
@@ -112,13 +113,13 @@ class AdvNetworkMediaTxOpImpl {
         parent_.frame_height_.get(), frame_size_, expected_video_format_);
 
       if (result != Status::SUCCESS) {
-        HOLOSCAN_LOG_ERROR("Tensor validation failed");
+        ANM_LOG_ERROR("Tensor validation failed");
         return nullptr;
       }
 
       return std::make_shared<MediaFrame>(std::move(frame));
     } catch (const std::exception& e) {
-      HOLOSCAN_LOG_ERROR("Tensor error: {}", e.what());
+      ANM_LOG_ERROR("Tensor error: {}", e.what());
       return nullptr;
     }
   }
@@ -142,14 +143,14 @@ class AdvNetworkMediaTxOpImpl {
     } else {
       auto maybe_tensor = entity.get<nvidia::gxf::Tensor>();
       if (!maybe_tensor) {
-        HOLOSCAN_LOG_ERROR("Neither VideoBuffer nor Tensor found in message");
+        ANM_LOG_ERROR("Neither VideoBuffer nor Tensor found in message");
         return;
       }
       pending_tx_frame_ = create_media_frame_from_tensor(std::move(entity));
     }
 
     if (!pending_tx_frame_) {
-      HOLOSCAN_LOG_ERROR("Failed to create media frame");
+      ANM_LOG_ERROR("Failed to create media frame");
       return;
     }
   }
@@ -167,7 +168,7 @@ class AdvNetworkMediaTxOpImpl {
     static int err = 0;
 
     if (!pending_tx_frame_) {
-      HOLOSCAN_LOG_ERROR("No pending TX frame");
+      ANM_LOG_ERROR("No pending TX frame");
       return;
     }
 
@@ -179,7 +180,7 @@ class AdvNetworkMediaTxOpImpl {
     if (!is_tx_burst_available(cur_msg_)) {
       std::this_thread::sleep_for(std::chrono::microseconds(SLEEP_WHEN_BURST_NOT_AVAILABLE_US));
       if (++not_available_count == DISPLAY_WARNING_AFTER_BURST_NOT_AVAILABLE) {
-        HOLOSCAN_LOG_ERROR(
+        ANM_LOG_ERROR(
             "TX port {}, queue {}, burst not available too many times consecutively. "
             "Make sure memory region has enough buffers. Sent {} and error {}",
             port_id_,
@@ -194,7 +195,7 @@ class AdvNetworkMediaTxOpImpl {
     not_available_count = 0;
     Status ret;
     if ((ret = get_tx_packet_burst(cur_msg_)) != Status::SUCCESS) {
-      HOLOSCAN_LOG_ERROR("Error returned from get_tx_packet_burst: {}", static_cast<int>(ret));
+      ANM_LOG_ERROR("Error returned from get_tx_packet_burst: {}", static_cast<int>(ret));
       return;
     }
 
@@ -203,14 +204,14 @@ class AdvNetworkMediaTxOpImpl {
 
     ret = send_tx_burst(cur_msg_);
     if (ret != Status::SUCCESS) {
-      HOLOSCAN_LOG_ERROR("Error returned from send_tx_burst: {}", static_cast<int>(ret));
+      ANM_LOG_ERROR("Error returned from send_tx_burst: {}", static_cast<int>(ret));
       free_tx_burst(cur_msg_);
       err++;
     } else {
       sent++;
     }
     cur_msg_ = nullptr;
-    HOLOSCAN_LOG_TRACE("AdvNetworkMediaTxOp::process_output() {}:{} done. Emitted{}/Error{}",
+    ANM_STATS_TRACE("AdvNetworkMediaTxOp::process_output() {}:{} done. Emitted{}/Error{}",
                        port_id_,
                        parent_.queue_id_.get(),
                        sent,
@@ -240,7 +241,7 @@ AdvNetworkMediaTxOp::~AdvNetworkMediaTxOp() {
 }
 
 void AdvNetworkMediaTxOp::initialize() {
-  HOLOSCAN_LOG_INFO("AdvNetworkMediaTxOp::initialize()");
+  ANM_LOG_INFO("AdvNetworkMediaTxOp::initialize()");
   holoscan::Operator::initialize();
 
   if (!pimpl_) {

@@ -40,7 +40,7 @@ void MemoryCopyStrategyDetector::configure_burst_parameters(size_t header_stride
                                                             size_t payload_stride_size,
                                                             bool hds_enabled) {
   if (detection_complete_) {
-    HOLOSCAN_LOG_DEBUG("Strategy already detected, ignoring burst parameter update");
+    ANM_STRATEGY_LOG("Strategy already detected, ignoring burst parameter update");
     return;
   }
 
@@ -50,7 +50,7 @@ void MemoryCopyStrategyDetector::configure_burst_parameters(size_t header_stride
         (expected_header_stride_ != header_stride_size ||
          expected_payload_stride_ != payload_stride_size || hds_enabled_ != hds_enabled);
     if (config_changed) {
-      HOLOSCAN_LOG_WARN("Burst configuration changed during detection, restarting analysis");
+      ANM_STRATEGY_LOG("Burst configuration changed during detection, restarting analysis");
       reset();
     }
   }
@@ -59,7 +59,7 @@ void MemoryCopyStrategyDetector::configure_burst_parameters(size_t header_stride
   expected_payload_stride_ = payload_stride_size;
   hds_enabled_ = hds_enabled;
 
-  HOLOSCAN_LOG_DEBUG(
+  ANM_STRATEGY_LOG(
       "Strategy detector configured: header_stride={}, payload_stride={}, hds_enabled={}",
       header_stride_size,
       payload_stride_size,
@@ -74,7 +74,7 @@ bool MemoryCopyStrategyDetector::collect_packet(const RtpParams& rtp_params, uin
 
   // Validate input
   if (!payload || payload_size == 0) {
-    HOLOSCAN_LOG_WARN("Invalid packet data for strategy detection, skipping");
+    ANM_LOG_WARN("Invalid packet data for strategy detection, skipping");
     return false;
   }
 
@@ -84,7 +84,7 @@ bool MemoryCopyStrategyDetector::collect_packet(const RtpParams& rtp_params, uin
   collected_sequences_.push_back(rtp_params.sequence_number);
   packets_analyzed_++;
 
-  PACKET_TRACE_LOG("Collected packet {} for detection: payload={}, size={}, seq={}",
+  ANM_STRATEGY_LOG("Collected packet {} for detection: payload={}, size={}, seq={}",
                    packets_analyzed_,
                    static_cast<void*>(payload),
                    payload_size,
@@ -97,7 +97,7 @@ std::unique_ptr<IMemoryCopyStrategy> MemoryCopyStrategyDetector::detect_strategy
     nvidia::gxf::MemoryStorageType src_storage_type,
     nvidia::gxf::MemoryStorageType dst_storage_type) {
   if (collected_payloads_.size() < 2) {
-    HOLOSCAN_LOG_INFO("Insufficient packets for analysis ({} < 2), defaulting to CONTIGUOUS",
+    ANM_STRATEGY_LOG("Insufficient packets for analysis ({} < 2), defaulting to CONTIGUOUS",
                       collected_payloads_.size());
     detection_complete_ = true;
     return StrategyFactory::create_contiguous_strategy(src_storage_type, dst_storage_type);
@@ -105,14 +105,14 @@ std::unique_ptr<IMemoryCopyStrategy> MemoryCopyStrategyDetector::detect_strategy
 
   // Validate sequence continuity
   if (!validate_sequence_continuity()) {
-    HOLOSCAN_LOG_WARN("RTP sequence drops detected, restarting detection");
+    ANM_STRATEGY_LOG("RTP sequence drops detected, restarting detection");
     reset();
     return nullptr;
   }
 
   // Check for buffer wraparound
   if (detect_buffer_wraparound()) {
-    HOLOSCAN_LOG_WARN("Buffer wraparound detected, restarting detection");
+    ANM_STRATEGY_LOG("Buffer wraparound detected, restarting detection");
     reset();
     return nullptr;
   }
@@ -120,7 +120,7 @@ std::unique_ptr<IMemoryCopyStrategy> MemoryCopyStrategyDetector::detect_strategy
   // Analyze pattern
   auto analysis_result = analyze_pattern();
   if (!analysis_result) {
-    HOLOSCAN_LOG_WARN("Pattern analysis failed, restarting detection");
+    ANM_STRATEGY_LOG("Pattern analysis failed, restarting detection");
     reset();
     return nullptr;
   }
@@ -128,10 +128,10 @@ std::unique_ptr<IMemoryCopyStrategy> MemoryCopyStrategyDetector::detect_strategy
   auto [strategy_type, stride_info] = *analysis_result;
   detection_complete_ = true;
 
-  HOLOSCAN_LOG_INFO("Strategy detection completed: {} (stride: {}, payload: {})",
-                    strategy_type == CopyStrategy::CONTIGUOUS ? "CONTIGUOUS" : "STRIDED",
-                    stride_info.stride_size,
-                    stride_info.payload_size);
+  ANM_STRATEGY_LOG("Strategy detection completed: {} (stride: {}, payload: {})",
+                   strategy_type == CopyStrategy::CONTIGUOUS ? "CONTIGUOUS" : "STRIDED",
+                   stride_info.stride_size,
+                   stride_info.payload_size);
 
   if (strategy_type == CopyStrategy::CONTIGUOUS) {
     return StrategyFactory::create_contiguous_strategy(src_storage_type, dst_storage_type);
@@ -148,7 +148,7 @@ void MemoryCopyStrategyDetector::reset() {
   packets_analyzed_ = 0;
   detection_complete_ = false;
 
-  HOLOSCAN_LOG_DEBUG("Strategy detector reset");
+  ANM_STRATEGY_LOG("Strategy detector reset");
 }
 
 std::optional<std::pair<CopyStrategy, StrideInfo>> MemoryCopyStrategyDetector::analyze_pattern() {
@@ -160,7 +160,7 @@ std::optional<std::pair<CopyStrategy, StrideInfo>> MemoryCopyStrategyDetector::a
   size_t payload_size = collected_payload_sizes_[0];
   for (size_t i = 1; i < collected_payload_sizes_.size(); ++i) {
     if (collected_payload_sizes_[i] != payload_size) {
-      HOLOSCAN_LOG_WARN("Inconsistent payload sizes: first={}, packet_{}={}",
+      ANM_STRATEGY_LOG("Inconsistent payload sizes: first={}, packet_{}={}",
                         payload_size,
                         i,
                         collected_payload_sizes_[i]);
@@ -187,7 +187,7 @@ std::optional<std::pair<CopyStrategy, StrideInfo>> MemoryCopyStrategyDetector::a
     uint8_t* expected_next_ptr = prev_ptr + payload_size;
     if (curr_ptr != expected_next_ptr) {
       is_exactly_contiguous = false;
-      PACKET_TRACE_LOG("Non-contiguous detected: packet {}, expected={}, actual={}",
+      ANM_STRATEGY_LOG("Non-contiguous detected: packet {}, expected={}, actual={}",
                        i,
                        static_cast<void*>(expected_next_ptr),
                        static_cast<void*>(curr_ptr));
@@ -196,7 +196,7 @@ std::optional<std::pair<CopyStrategy, StrideInfo>> MemoryCopyStrategyDetector::a
     // Check stride consistency
     if (pointer_diff != actual_stride) {
       is_stride_consistent = false;
-      PACKET_TRACE_LOG(
+      ANM_STRATEGY_LOG(
           "Inconsistent stride: packet {}, expected={}, actual={}", i, actual_stride, pointer_diff);
       break;
     }
@@ -211,16 +211,16 @@ std::optional<std::pair<CopyStrategy, StrideInfo>> MemoryCopyStrategyDetector::a
   CopyStrategy strategy;
   if (is_exactly_contiguous) {
     strategy = CopyStrategy::CONTIGUOUS;
-    HOLOSCAN_LOG_DEBUG("Packets are exactly contiguous, using CONTIGUOUS strategy");
+    ANM_STRATEGY_LOG("Packets are exactly contiguous, using CONTIGUOUS strategy");
   } else if (is_stride_consistent) {
     strategy = CopyStrategy::STRIDED;
-    HOLOSCAN_LOG_DEBUG(
+    ANM_STRATEGY_LOG(
         "Consistent stride pattern detected, using STRIDED strategy (stride={}, payload={})",
         actual_stride,
         payload_size);
   } else {
     strategy = CopyStrategy::CONTIGUOUS;
-    HOLOSCAN_LOG_DEBUG("Inconsistent patterns, falling back to CONTIGUOUS strategy");
+    ANM_STRATEGY_LOG("Inconsistent patterns, falling back to CONTIGUOUS strategy");
   }
 
   return std::make_pair(strategy, stride_info);
@@ -237,7 +237,7 @@ bool MemoryCopyStrategyDetector::validate_sequence_continuity() const {
     uint64_t expected_seq = prev_seq + 1;
 
     if (curr_seq != expected_seq) {
-      PACKET_TRACE_LOG("RTP sequence discontinuity: expected {}, got {} (prev was {})",
+      ANM_STRATEGY_LOG("RTP sequence discontinuity: expected {}, got {} (prev was {})",
                        expected_seq,
                        curr_seq,
                        prev_seq);
@@ -260,7 +260,7 @@ bool MemoryCopyStrategyDetector::detect_buffer_wraparound() const {
     if (curr_ptr < prev_ptr) {
       ptrdiff_t backward_diff = prev_ptr - curr_ptr;
       if (backward_diff > 1024 * 1024) {  // 1MB threshold
-        PACKET_TRACE_LOG("Potential buffer wraparound: {} -> {}",
+        ANM_STRATEGY_LOG("Potential buffer wraparound: {} -> {}",
                          static_cast<void*>(prev_ptr),
                          static_cast<void*>(curr_ptr));
         return true;
@@ -286,7 +286,7 @@ StateEvent ContiguousMemoryCopyStrategy::process_packet(
     FrameAssemblyController& assembly_controller, uint8_t* payload, size_t payload_size) {
   // Input validation for packet processing
   if (!payload || payload_size == 0) {
-    HOLOSCAN_LOG_ERROR("ContiguousStrategy: Invalid packet data");
+    ANM_LOG_ERROR("ContiguousStrategy: Invalid packet data");
     return StateEvent::CORRUPTION_DETECTED;
   }
 
@@ -294,7 +294,7 @@ StateEvent ContiguousMemoryCopyStrategy::process_packet(
   if (!accumulated_start_ptr_) {
     accumulated_start_ptr_ = payload;
     accumulated_size_ = 0;
-    PACKET_TRACE_LOG("ContiguousStrategy: Starting new accumulation at {}",
+    ANM_MEMCOPY_TRACE("ContiguousStrategy: Starting new accumulation at {}",
                      static_cast<void*>(payload));
   }
 
@@ -302,7 +302,7 @@ StateEvent ContiguousMemoryCopyStrategy::process_packet(
   bool is_contiguous = (accumulated_start_ptr_ + accumulated_size_ == payload);
 
   if (!is_contiguous) {
-    PACKET_TRACE_LOG("ContiguousStrategy: Contiguity break, executing copy for {} bytes",
+    ANM_MEMCOPY_TRACE("ContiguousStrategy: Contiguity break, executing copy for {} bytes",
                      accumulated_size_);
 
     // Execute accumulated copy before starting new accumulation
@@ -322,7 +322,7 @@ StateEvent ContiguousMemoryCopyStrategy::process_packet(
   // Safety check for frame bounds
   auto frame = assembly_controller.get_current_frame();
   if (frame && accumulated_size_ > frame->get_size()) {
-    HOLOSCAN_LOG_ERROR("ContiguousStrategy: Accumulated size ({}) exceeds frame size ({})",
+    ANM_LOG_ERROR("ContiguousStrategy: Accumulated size ({}) exceeds frame size ({})",
                        accumulated_size_,
                        frame->get_size());
     reset();
@@ -339,7 +339,7 @@ bool ContiguousMemoryCopyStrategy::has_accumulated_data() const {
 void ContiguousMemoryCopyStrategy::reset() {
   accumulated_start_ptr_ = nullptr;
   accumulated_size_ = 0;
-  PACKET_TRACE_LOG("ContiguousStrategy: Reset accumulation state");
+  ANM_MEMCOPY_TRACE("ContiguousStrategy: Reset accumulation state");
 }
 
 StateEvent ContiguousMemoryCopyStrategy::execute_accumulated_copy(
@@ -355,7 +355,7 @@ StateEvent ContiguousMemoryCopyStrategy::execute_copy(
 
   // Validate copy bounds
   if (!validate_copy_bounds(assembly_controller)) {
-    HOLOSCAN_LOG_ERROR("ContiguousStrategy: Copy bounds validation failed");
+    ANM_LOG_ERROR("ContiguousStrategy: Copy bounds validation failed");
     reset();
     return StateEvent::CORRUPTION_DETECTED;
   }
@@ -363,7 +363,7 @@ StateEvent ContiguousMemoryCopyStrategy::execute_copy(
   auto frame = assembly_controller.get_current_frame();
   uint8_t* dst_ptr = static_cast<uint8_t*>(frame->get()) + assembly_controller.get_frame_position();
 
-  PACKET_TRACE_LOG("ContiguousStrategy: Executing copy - pos={}, size={}, frame_size={}",
+  ANM_MEMCOPY_TRACE("ContiguousStrategy: Executing copy - pos={}, size={}, frame_size={}",
                    assembly_controller.get_frame_position(),
                    accumulated_size_,
                    frame->get_size());
@@ -371,7 +371,7 @@ StateEvent ContiguousMemoryCopyStrategy::execute_copy(
   // Execute copy operation
   if (!CopyOperationHelper::safe_copy(
           dst_ptr, accumulated_start_ptr_, accumulated_size_, copy_kind_)) {
-    HOLOSCAN_LOG_ERROR("ContiguousStrategy: Copy operation failed");
+    ANM_LOG_ERROR("ContiguousStrategy: Copy operation failed");
     reset();
     return StateEvent::CORRUPTION_DETECTED;
   }
@@ -379,7 +379,7 @@ StateEvent ContiguousMemoryCopyStrategy::execute_copy(
   // Update frame position
   assembly_controller.advance_frame_position(accumulated_size_);
 
-  PACKET_TRACE_LOG("ContiguousStrategy: Copy completed - new_pos={}, copied={}",
+  ANM_MEMCOPY_TRACE("ContiguousStrategy: Copy completed - new_pos={}, copied={}",
                    assembly_controller.get_frame_position(),
                    accumulated_size_);
 
@@ -418,21 +418,21 @@ StateEvent StridedMemoryCopyStrategy::process_packet(FrameAssemblyController& as
                                                      uint8_t* payload, size_t payload_size) {
   // Input validation
   if (!payload || payload_size == 0) {
-    HOLOSCAN_LOG_ERROR("StridedStrategy: Invalid packet data");
+    ANM_LOG_ERROR("StridedStrategy: Invalid packet data");
     return StateEvent::CORRUPTION_DETECTED;
   }
 
   // Initialize accumulation if needed
   if (!first_packet_ptr_) {
     reset_accumulation(payload, payload_size);
-    PACKET_TRACE_LOG("StridedStrategy: Starting accumulation with first packet at {}",
+    ANM_MEMCOPY_TRACE("StridedStrategy: Starting accumulation with first packet at {}",
                      static_cast<void*>(payload));
     return StateEvent::PACKET_ARRIVED;
   }
 
   // Check if stride pattern is maintained
   if (!is_stride_maintained(payload, payload_size)) {
-    PACKET_TRACE_LOG("StridedStrategy: Stride pattern broken, executing copy and restarting");
+    ANM_MEMCOPY_TRACE("StridedStrategy: Stride pattern broken, executing copy and restarting");
 
     // Execute accumulated copy if we have multiple packets
     StateEvent copy_result;
@@ -457,7 +457,7 @@ StateEvent StridedMemoryCopyStrategy::process_packet(FrameAssemblyController& as
   accumulated_packet_count_++;
   accumulated_data_size_ += payload_size;
 
-  PACKET_TRACE_LOG("StridedStrategy: Accumulated packet {}, total_size={}",
+  ANM_MEMCOPY_TRACE("StridedStrategy: Accumulated packet {}, total_size={}",
                    accumulated_packet_count_,
                    accumulated_data_size_);
 
@@ -497,7 +497,7 @@ void StridedMemoryCopyStrategy::reset() {
   accumulated_data_size_ = 0;
   stride_validated_ = false;
   actual_stride_ = 0;
-  PACKET_TRACE_LOG("StridedStrategy: Reset accumulation state");
+  ANM_MEMCOPY_TRACE("StridedStrategy: Reset accumulation state");
 }
 
 bool StridedMemoryCopyStrategy::is_stride_maintained(uint8_t* payload, size_t payload_size) {
@@ -514,7 +514,7 @@ bool StridedMemoryCopyStrategy::is_stride_maintained(uint8_t* payload, size_t pa
     stride_validated_ = true;
 
     if (actual_stride_ != stride_info_.stride_size) {
-      PACKET_TRACE_LOG("StridedStrategy: Actual stride ({}) differs from expected ({})",
+      ANM_MEMCOPY_TRACE("StridedStrategy: Actual stride ({}) differs from expected ({})",
                        actual_stride_,
                        stride_info_.stride_size);
     }
@@ -523,7 +523,7 @@ bool StridedMemoryCopyStrategy::is_stride_maintained(uint8_t* payload, size_t pa
   } else {
     // Subsequent stride validation
     if (actual_diff != actual_stride_) {
-      PACKET_TRACE_LOG("StridedStrategy: Stride inconsistent: expected={}, actual={}",
+      ANM_MEMCOPY_TRACE("StridedStrategy: Stride inconsistent: expected={}, actual={}",
                        actual_stride_,
                        actual_diff);
       return false;
@@ -540,7 +540,7 @@ StateEvent StridedMemoryCopyStrategy::execute_strided_copy(
 
   // Validate copy bounds
   if (!validate_strided_copy_bounds(assembly_controller)) {
-    HOLOSCAN_LOG_ERROR("StridedStrategy: Strided copy bounds validation failed");
+    ANM_LOG_ERROR("StridedStrategy: Strided copy bounds validation failed");
     reset();
     return StateEvent::CORRUPTION_DETECTED;
   }
@@ -554,7 +554,7 @@ StateEvent StridedMemoryCopyStrategy::execute_strided_copy(
   size_t src_pitch = actual_stride_;
   size_t dst_pitch = width;  // Contiguous destination
 
-  PACKET_TRACE_LOG(
+  ANM_MEMCOPY_TRACE(
       "StridedStrategy: Executing 2D copy - width={}, height={}, src_pitch={}, dst_pitch={}",
       width,
       height,
@@ -564,7 +564,7 @@ StateEvent StridedMemoryCopyStrategy::execute_strided_copy(
   // Execute 2D copy
   if (!CopyOperationHelper::safe_copy_2d(
           dst_ptr, dst_pitch, first_packet_ptr_, src_pitch, width, height, copy_kind_)) {
-    HOLOSCAN_LOG_ERROR("StridedStrategy: 2D copy operation failed");
+    ANM_LOG_ERROR("StridedStrategy: 2D copy operation failed");
     reset();
     return StateEvent::CORRUPTION_DETECTED;
   }
@@ -572,7 +572,7 @@ StateEvent StridedMemoryCopyStrategy::execute_strided_copy(
   // Update frame position
   assembly_controller.advance_frame_position(accumulated_data_size_);
 
-  PACKET_TRACE_LOG("StridedStrategy: Strided copy completed - new_pos={}, copied={}",
+  ANM_MEMCOPY_TRACE("StridedStrategy: Strided copy completed - new_pos={}, copied={}",
                    assembly_controller.get_frame_position(),
                    accumulated_data_size_);
 
@@ -593,15 +593,15 @@ StateEvent StridedMemoryCopyStrategy::execute_individual_copy(
 
   // Bounds checking
   if (assembly_controller.get_frame_position() + payload_size > frame->get_size()) {
-    HOLOSCAN_LOG_ERROR("StridedStrategy: Individual copy would exceed frame bounds");
+    ANM_LOG_ERROR("StridedStrategy: Individual copy would exceed frame bounds");
     return StateEvent::CORRUPTION_DETECTED;
   }
 
-  PACKET_TRACE_LOG("StridedStrategy: Executing individual copy - size={}", payload_size);
+  ANM_MEMCOPY_TRACE("StridedStrategy: Executing individual copy - size={}", payload_size);
 
   // Execute copy
   if (!CopyOperationHelper::safe_copy(dst_ptr, payload, payload_size, copy_kind_)) {
-    HOLOSCAN_LOG_ERROR("StridedStrategy: Individual copy operation failed");
+    ANM_LOG_ERROR("StridedStrategy: Individual copy operation failed");
     return StateEvent::CORRUPTION_DETECTED;
   }
 
@@ -651,7 +651,7 @@ cudaMemcpyKind CopyOperationHelper::get_copy_kind(nvidia::gxf::MemoryStorageType
 
 bool CopyOperationHelper::safe_copy(void* dst, const void* src, size_t size, cudaMemcpyKind kind) {
   if (!dst || !src || size == 0) {
-    HOLOSCAN_LOG_ERROR("CopyOperationHelper: Invalid copy parameters");
+    ANM_LOG_ERROR("CopyOperationHelper: Invalid copy parameters");
     return false;
   }
 
@@ -659,7 +659,7 @@ bool CopyOperationHelper::safe_copy(void* dst, const void* src, size_t size, cud
     CUDA_TRY(cudaMemcpy(dst, src, size, kind));
     return true;
   } catch (const std::exception& e) {
-    HOLOSCAN_LOG_ERROR("CopyOperationHelper: Copy failed - {}", e.what());
+    ANM_LOG_ERROR("CopyOperationHelper: Copy failed - {}", e.what());
     return false;
   }
 }
@@ -668,7 +668,7 @@ bool CopyOperationHelper::safe_copy_2d(void* dst, size_t dst_pitch, const void* 
                                        size_t src_pitch, size_t width, size_t height,
                                        cudaMemcpyKind kind) {
   if (!dst || !src || width == 0 || height == 0) {
-    HOLOSCAN_LOG_ERROR("CopyOperationHelper: Invalid 2D copy parameters");
+    ANM_LOG_ERROR("CopyOperationHelper: Invalid 2D copy parameters");
     return false;
   }
 
@@ -676,7 +676,7 @@ bool CopyOperationHelper::safe_copy_2d(void* dst, size_t dst_pitch, const void* 
     CUDA_TRY(cudaMemcpy2D(dst, dst_pitch, src, src_pitch, width, height, kind));
     return true;
   } catch (const std::exception& e) {
-    HOLOSCAN_LOG_ERROR("CopyOperationHelper: 2D copy failed - {}", e.what());
+    ANM_LOG_ERROR("CopyOperationHelper: 2D copy failed - {}", e.what());
     return false;
   }
 }

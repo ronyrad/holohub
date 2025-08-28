@@ -34,7 +34,7 @@ FrameAssemblyController::FrameAssemblyController(std::shared_ptr<IFrameProvider>
   context_.frame_position = 0;
   context_.frame_state = FrameState::IDLE;
 
-  HOLOSCAN_LOG_DEBUG("FrameAssemblyController initialized");
+  ANM_CONFIG_LOG("FrameAssemblyController initialized");
 }
 
 StateTransitionResult FrameAssemblyController::process_event(StateEvent event,
@@ -48,13 +48,19 @@ StateTransitionResult FrameAssemblyController::process_event(StateEvent event,
 
   packets_processed_++;
 
-  PACKET_TRACE_LOG("Processing event {} in state {}",
-                   FrameAssemblyHelper::event_to_string(event),
-                   FrameAssemblyHelper::state_to_string(context_.frame_state));
+  ANM_STATE_TRACE(
+      "State machine context: frame_position={}, current_frame={}, packets_processed={}",
+      context_.frame_position,
+      context_.current_frame ? "allocated" : "null",
+      packets_processed_);
 
   StateTransitionResult result;
 
   // Route to appropriate state handler
+  ANM_STATE_TRACE("Routing event {} to state handler for state {}",
+                  FrameAssemblyHelper::event_to_string(event),
+                  FrameAssemblyHelper::state_to_string(context_.frame_state));
+
   switch (context_.frame_state) {
     case FrameState::IDLE:
       result = handle_idle_state(event, rtp_params, payload);
@@ -66,6 +72,8 @@ StateTransitionResult FrameAssemblyController::process_event(StateEvent event,
       result = handle_error_recovery_state(event, rtp_params, payload);
       break;
     default:
+      ANM_STATE_TRACE("Unhandled state encountered: {}",
+                      FrameAssemblyHelper::state_to_string(context_.frame_state));
       result = create_error_result("Unknown state");
       break;
   }
@@ -73,13 +81,30 @@ StateTransitionResult FrameAssemblyController::process_event(StateEvent event,
   // Update context if transition succeeded
   if (result.success && result.new_frame_state != context_.frame_state) {
     FrameState old_state = context_.frame_state;
+    ANM_STATE_TRACE(
+        "Attempting state transition: {} -> {} with result actions: allocate={}, complete={}, "
+        "emit={}",
+        FrameAssemblyHelper::state_to_string(old_state),
+        FrameAssemblyHelper::state_to_string(result.new_frame_state),
+        result.should_allocate_new_frame,
+        result.should_complete_frame,
+        result.should_emit_frame);
+
     if (transition_to_state(result.new_frame_state)) {
-      HOLOSCAN_LOG_DEBUG("State transition: {} -> {}",
-                         FrameAssemblyHelper::state_to_string(old_state),
-                         FrameAssemblyHelper::state_to_string(result.new_frame_state));
+      ANM_STATE_TRACE("State transition: {} -> {}",
+                      FrameAssemblyHelper::state_to_string(old_state),
+                      FrameAssemblyHelper::state_to_string(result.new_frame_state));
     } else {
       result = create_error_result("Invalid state transition");
     }
+  } else if (result.success) {
+    ANM_STATE_TRACE(
+        "Event processed, staying in state {} with result actions: allocate={}, complete={}, "
+        "emit={}",
+        FrameAssemblyHelper::state_to_string(context_.frame_state),
+        result.should_allocate_new_frame,
+        result.should_complete_frame,
+        result.should_emit_frame);
   }
 
   return result;
@@ -98,12 +123,12 @@ void FrameAssemblyController::reset() {
   // This prevents reducing the pool size unnecessarily
   context_.current_frame = nullptr;
 
-  HOLOSCAN_LOG_DEBUG("Assembly controller reset to initial state");
+  ANM_CONFIG_LOG("Assembly controller reset to initial state");
 }
 
 bool FrameAssemblyController::advance_frame_position(size_t bytes) {
   if (!validate_frame_bounds(bytes)) {
-    HOLOSCAN_LOG_ERROR(
+    ANM_LOG_ERROR(
         "Frame position advancement would exceed bounds: current={}, bytes={}, frame_size={}",
         context_.frame_position,
         bytes,
@@ -113,7 +138,7 @@ bool FrameAssemblyController::advance_frame_position(size_t bytes) {
 
   context_.frame_position += bytes;
 
-  PACKET_TRACE_LOG(
+  ANM_FRAME_TRACE(
       "Frame position advanced by {} bytes to position {}", bytes, context_.frame_position);
   return true;
 }
@@ -122,11 +147,10 @@ void FrameAssemblyController::set_strategy(std::shared_ptr<IMemoryCopyStrategy> 
   strategy_ = strategy;
 
   if (strategy_) {
-    HOLOSCAN_LOG_DEBUG(
-        "Strategy set: {}",
-        strategy_->get_type() == CopyStrategy::CONTIGUOUS ? "CONTIGUOUS" : "STRIDED");
+    ANM_CONFIG_LOG("Strategy set: {}",
+                   strategy_->get_type() == CopyStrategy::CONTIGUOUS ? "CONTIGUOUS" : "STRIDED");
   } else {
-    HOLOSCAN_LOG_DEBUG("Strategy cleared");
+    ANM_CONFIG_LOG("Strategy cleared");
   }
 }
 
@@ -135,17 +159,18 @@ bool FrameAssemblyController::allocate_new_frame() {
   context_.frame_position = 0;
 
   if (!context_.current_frame) {
-    HOLOSCAN_LOG_ERROR("Frame allocation failed");
+    ANM_LOG_ERROR("Frame allocation failed");
     return false;
   }
 
-  PACKET_TRACE_LOG("New frame allocated: size={}", context_.current_frame->get_size());
+  ANM_FRAME_TRACE("New frame allocated: size={}", context_.current_frame->get_size());
   return true;
 }
 
 void FrameAssemblyController::release_current_frame() {
   if (context_.current_frame) {
-    PACKET_TRACE_LOG("Releasing current frame back to pool: size={}", context_.current_frame->get_size());
+    ANM_FRAME_TRACE("Releasing current frame back to pool: size={}",
+                    context_.current_frame->get_size());
     // Return frame to pool through frame provider
     frame_provider_->return_frame_to_pool(context_.current_frame);
     context_.current_frame.reset();
@@ -163,9 +188,9 @@ bool FrameAssemblyController::validate_frame_bounds(size_t required_bytes) const
 
 bool FrameAssemblyController::transition_to_state(FrameState new_state) {
   if (!FrameAssemblyHelper::is_valid_transition(context_.frame_state, new_state)) {
-    HOLOSCAN_LOG_ERROR("Invalid state transition: {} -> {}",
-                       FrameAssemblyHelper::state_to_string(context_.frame_state),
-                       FrameAssemblyHelper::state_to_string(new_state));
+    ANM_LOG_ERROR("Invalid state transition: {} -> {}",
+                  FrameAssemblyHelper::state_to_string(context_.frame_state),
+                  FrameAssemblyHelper::state_to_string(new_state));
     return false;
   }
 
@@ -176,6 +201,10 @@ bool FrameAssemblyController::transition_to_state(FrameState new_state) {
 StateTransitionResult FrameAssemblyController::handle_idle_state(StateEvent event,
                                                                  const RtpParams* rtp_params,
                                                                  uint8_t* payload) {
+  ANM_STATE_TRACE("IDLE state handler: processing event {}, current_frame={}",
+                  FrameAssemblyHelper::event_to_string(event),
+                  context_.current_frame ? "allocated" : "null");
+
   switch (event) {
     case StateEvent::PACKET_ARRIVED: {
       // Start receiving packets - allocate frame if we don't have one
@@ -189,20 +218,24 @@ StateTransitionResult FrameAssemblyController::handle_idle_state(StateEvent even
     case StateEvent::MARKER_DETECTED: {
       // Single packet frame (edge case) - complete atomically
       auto result = create_success_result(FrameState::IDLE);
-      
+
       if (!context_.current_frame) {
         // No frame allocated yet - allocate one for this single packet
+        ANM_STATE_TRACE(
+            "IDLE single-packet frame: no frame allocated, requesting new frame for single packet");
         result.should_allocate_new_frame = true;
         // Don't complete/emit since we just allocated
         return result;
       } else {
         // Frame exists - complete it and allocate new one
+        ANM_STATE_TRACE(
+            "IDLE single-packet frame: completing existing frame and requesting new one");
         result.should_complete_frame = true;
         result.should_emit_frame = true;
         if (frame_provider_->has_available_frames()) {
           result.should_allocate_new_frame = true;
         } else {
-          HOLOSCAN_LOG_WARN("Frame completed but pool is empty - staying in IDLE without new frame");
+          ANM_LOG_WARN("Frame completed but pool is empty - staying in IDLE without new frame");
         }
         frames_completed_++;
         return result;
@@ -214,8 +247,7 @@ StateTransitionResult FrameAssemblyController::handle_idle_state(StateEvent even
 
     case StateEvent::STRATEGY_DETECTED:
       // This should not happen in IDLE state - memory copy strategy detection requires packets
-      HOLOSCAN_LOG_WARN(
-          "STRATEGY_DETECTED event received in IDLE state - treating as PACKET_ARRIVED");
+      ANM_LOG_WARN("STRATEGY_DETECTED event received in IDLE state - treating as PACKET_ARRIVED");
       return create_success_result(FrameState::RECEIVING_PACKETS);
 
     default:
@@ -226,6 +258,10 @@ StateTransitionResult FrameAssemblyController::handle_idle_state(StateEvent even
 StateTransitionResult FrameAssemblyController::handle_receiving_state(StateEvent event,
                                                                       const RtpParams* rtp_params,
                                                                       uint8_t* payload) {
+  ANM_STATE_TRACE("RECEIVING_PACKETS state handler: processing event {}, frame_position={}",
+                  FrameAssemblyHelper::event_to_string(event),
+                  context_.frame_position);
+
   switch (event) {
     case StateEvent::PACKET_ARRIVED:
       // Continue receiving packets
@@ -234,13 +270,15 @@ StateTransitionResult FrameAssemblyController::handle_receiving_state(StateEvent
     case StateEvent::MARKER_DETECTED: {
       // Frame completion triggered - complete atomically
       // Only allocate new frame if pool has available frames
+      ANM_STATE_TRACE("RECEIVING_PACKETS->IDLE: marker detected, completing frame at position {}",
+                      context_.frame_position);
       auto result = create_success_result(FrameState::IDLE);
       result.should_complete_frame = true;
       result.should_emit_frame = true;
       if (frame_provider_->has_available_frames()) {
         result.should_allocate_new_frame = true;
       } else {
-        HOLOSCAN_LOG_WARN("Frame completed but pool is empty - staying in IDLE without new frame");
+        ANM_LOG_WARN("Frame completed but pool is empty - staying in IDLE without new frame");
       }
       frames_completed_++;
       return result;
@@ -248,8 +286,7 @@ StateTransitionResult FrameAssemblyController::handle_receiving_state(StateEvent
 
     case StateEvent::COPY_EXECUTED:
       // This should not happen - COPY_EXECUTED events are not sent to state machine
-      HOLOSCAN_LOG_WARN(
-          "COPY_EXECUTED received in RECEIVING_PACKETS state - this indicates dead code");
+      ANM_LOG_WARN("COPY_EXECUTED received in RECEIVING_PACKETS state - this indicates dead code");
       return create_success_result(FrameState::RECEIVING_PACKETS);
 
     case StateEvent::CORRUPTION_DETECTED:
@@ -266,26 +303,36 @@ StateTransitionResult FrameAssemblyController::handle_receiving_state(StateEvent
 
 StateTransitionResult FrameAssemblyController::handle_error_recovery_state(
     StateEvent event, const RtpParams* rtp_params, uint8_t* payload) {
+  ANM_STATE_TRACE(
+      "ERROR_RECOVERY state handler: processing event {}, current_frame={}, error_recoveries={}",
+      FrameAssemblyHelper::event_to_string(event),
+      context_.current_frame ? "allocated" : "null",
+      error_recoveries_);
+
   switch (event) {
     case StateEvent::RECOVERY_MARKER: {
       // Recovery marker received - release any corrupted frame and try to start new one
       // Only exit recovery if we can allocate a new frame
       if (frame_provider_->has_available_frames()) {
         if (context_.current_frame) {
-          PACKET_TRACE_LOG("Releasing corrupted frame during recovery: size={}, ptr={}", 
+          ANM_FRAME_TRACE("Releasing corrupted frame during recovery: size={}, ptr={}",
                           context_.current_frame->get_size(),
                           static_cast<void*>(context_.current_frame->get()));
+          ANM_STATE_TRACE("ERROR_RECOVERY: releasing corrupted frame before recovery completion");
           release_current_frame();
         }
-        
+
         error_recoveries_++;
-        HOLOSCAN_LOG_INFO("Recovery marker (M-bit) received - exiting error recovery");
+        ANM_LOG_INFO("Recovery marker (M-bit) received - exiting error recovery");
+        ANM_STATE_TRACE(
+            "ERROR_RECOVERY->IDLE: recovery successful, requesting new frame, total recoveries={}",
+            error_recoveries_);
         auto result = create_success_result(FrameState::IDLE);
         result.should_allocate_new_frame = true;
         return result;
       } else {
         // Stay in recovery if no frames available
-        HOLOSCAN_LOG_WARN("Recovery marker detected but frame pool is empty - staying in recovery");
+        ANM_LOG_WARN("Recovery marker detected but frame pool is empty - staying in recovery");
         auto result = create_success_result(FrameState::ERROR_RECOVERY);
         return result;
       }
@@ -293,7 +340,7 @@ StateTransitionResult FrameAssemblyController::handle_error_recovery_state(
 
     case StateEvent::PACKET_ARRIVED: {
       // Stay in recovery state, waiting for marker - packet discarded
-      HOLOSCAN_LOG_DEBUG("Packet discarded during error recovery - waiting for M-bit marker");
+      ANM_STATE_TRACE("ERROR_RECOVERY: packet discarded, packets_processed={}", packets_processed_);
       auto result = create_success_result(FrameState::ERROR_RECOVERY);
       result.should_skip_memory_copy_processing = true;
       return result;
@@ -305,7 +352,7 @@ StateTransitionResult FrameAssemblyController::handle_error_recovery_state(
 
     case StateEvent::MARKER_DETECTED: {
       // This should not happen in ERROR_RECOVERY - should be RECOVERY_MARKER instead
-      HOLOSCAN_LOG_WARN(
+      ANM_LOG_WARN(
           "MARKER_DETECTED received in ERROR_RECOVERY state - treating as RECOVERY_MARKER");
       // Only exit recovery if we can allocate a new frame
       if (frame_provider_->has_available_frames()) {
@@ -315,7 +362,7 @@ StateTransitionResult FrameAssemblyController::handle_error_recovery_state(
         return result;
       } else {
         // Stay in recovery if no frames available
-        HOLOSCAN_LOG_WARN("Marker detected but frame pool is empty - staying in recovery");
+        ANM_LOG_WARN("Marker detected but frame pool is empty - staying in recovery");
         auto result = create_success_result(FrameState::ERROR_RECOVERY);
         return result;
       }

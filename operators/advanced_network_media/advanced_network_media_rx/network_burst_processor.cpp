@@ -28,11 +28,11 @@ void NetworkBurstProcessor::process_burst(BurstParams* burst) {
 
     // Skip packet if extraction failed
     if (!extraction_result) {
-      HOLOSCAN_LOG_WARN("Failed to extract payload from packet {}", i);
+      ANM_LOG_WARN("Failed to extract payload from packet {}", i);
       continue;
     }
 
-    PACKET_TRACE_LOG("About to process packet {}/{}: seq={}, m_bit={}, size={}, payload_ptr={}",
+    ANM_PACKET_TRACE("About to process packet {}/{}: seq={}, m_bit={}, size={}, payload_ptr={}",
                      i + 1,
                      burst->hdr.hdr.num_pkts,
                      extraction_result.rtp_params.sequence_number,
@@ -42,7 +42,7 @@ void NetworkBurstProcessor::process_burst(BurstParams* burst) {
 
     assembler_->process_incoming_packet(extraction_result.rtp_params, extraction_result.payload);
 
-    PACKET_TRACE_LOG("Processed packet {}/{}: seq={}, m_bit={}, size={}",
+    ANM_PACKET_TRACE("Processed packet {}/{}: seq={}, m_bit={}, size={}",
                      i + 1,
                      burst->hdr.hdr.num_pkts,
                      extraction_result.rtp_params.sequence_number,
@@ -56,7 +56,7 @@ PacketExtractionResult NetworkBurstProcessor::extract_packet_data(BurstParams* b
   PacketExtractionResult result;
 
   if (packet_index >= burst->hdr.hdr.num_pkts) {
-    HOLOSCAN_LOG_ERROR(
+    ANM_LOG_ERROR(
         "Packet index {} out of range (max: {})", packet_index, burst->hdr.hdr.num_pkts);
     return result;  // success = false, payload = nullptr
   }
@@ -71,7 +71,7 @@ PacketExtractionResult NetworkBurstProcessor::extract_packet_data(BurstParams* b
     uint8_t* payload_ptr = reinterpret_cast<uint8_t*>(burst->pkts[GPU_PKTS][packet_index]);
 
     if (!header_ptr || !payload_ptr) {
-      HOLOSCAN_LOG_ERROR("Null pointer in HDS packet {}: header={}, payload={}",
+      ANM_LOG_ERROR("Null pointer in HDS packet {}: header={}, payload={}",
                          packet_index,
                          static_cast<void*>(header_ptr),
                          static_cast<void*>(payload_ptr));
@@ -80,11 +80,11 @@ PacketExtractionResult NetworkBurstProcessor::extract_packet_data(BurstParams* b
 
     // Parse RTP header from CPU memory
     if (!parse_rtp_header(header_ptr, result.rtp_params)) {
-      HOLOSCAN_LOG_ERROR("Failed to parse RTP header for packet {}", packet_index);
+      ANM_LOG_ERROR("Failed to parse RTP header for packet {}", packet_index);
       return result;  // success = false, payload = nullptr
     }
 
-    PACKET_TRACE_LOG("HDS packet {}: header_ptr={}, payload_ptr={}, seq={}",
+    ANM_PACKET_TRACE("HDS packet {}: header_ptr={}, payload_ptr={}, seq={}",
                      packet_index,
                      static_cast<void*>(header_ptr),
                      static_cast<void*>(payload_ptr),
@@ -99,20 +99,20 @@ PacketExtractionResult NetworkBurstProcessor::extract_packet_data(BurstParams* b
     uint8_t* packet_ptr = reinterpret_cast<uint8_t*>(burst->pkts[CPU_PKTS][packet_index]);
 
     if (!packet_ptr) {
-      HOLOSCAN_LOG_ERROR("Null packet pointer for packet {}", packet_index);
+      ANM_LOG_ERROR("Null packet pointer for packet {}", packet_index);
       return result;  // success = false, payload = nullptr
     }
 
     // Parse RTP header from beginning of packet
     if (!parse_rtp_header(packet_ptr, result.rtp_params)) {
-      HOLOSCAN_LOG_ERROR("Failed to parse RTP header for packet {}", packet_index);
+      ANM_LOG_ERROR("Failed to parse RTP header for packet {}", packet_index);
       return result;  // success = false, payload = nullptr
     }
 
     // Payload starts after RTP header
     uint8_t* payload_ptr = packet_ptr + RTP_SINGLE_SRD_HEADER_SIZE;
 
-    PACKET_TRACE_LOG("Standard packet {}: packet_ptr={}, payload_ptr={}, seq={}",
+    ANM_PACKET_TRACE("Standard packet {}: packet_ptr={}, payload_ptr={}, seq={}",
                      packet_index,
                      static_cast<void*>(packet_ptr),
                      static_cast<void*>(payload_ptr),

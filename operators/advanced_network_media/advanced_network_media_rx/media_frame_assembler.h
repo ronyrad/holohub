@@ -8,6 +8,8 @@
 
 #include <memory>
 #include <functional>
+#include <chrono>
+#include <string>
 #include "frame_provider.h"
 #include "frame_assembly_controller.h"
 #include "memory_copy_strategies.h"
@@ -141,16 +143,49 @@ class MediaFrameAssembler {
    * @return Statistics structure
    */
   struct Statistics {
+    // Basic counters
     size_t packets_processed = 0;
     size_t frames_completed = 0;
     size_t errors_recovered = 0;
     size_t memory_copy_strategy_redetections = 0;
+
+    // Enhanced frame tracking
+    size_t current_frame_number = 0;           // Current frame being assembled
+    size_t frames_started = 0;                 // Total frames started (including dropped)
+    size_t frames_dropped = 0;                 // Frames dropped due to errors
+    size_t frames_completed_successfully = 0;  // Successfully completed frames
+
+    // Enhanced error tracking
+    size_t sequence_discontinuities = 0;  // RTP sequence discontinuities
+    size_t buffer_overflow_errors = 0;    // Buffer wraparound detections
+    size_t memory_corruption_errors = 0;  // Memory bounds/corruption errors
+    size_t error_recovery_cycles = 0;     // Number of error recovery cycles
+
+    // Current frame metrics
+    size_t packets_in_current_frame = 0;   // Packets accumulated in current frame
+    size_t bytes_in_current_frame = 0;     // Bytes accumulated in current frame
+    uint32_t last_sequence_number = 0;     // Last processed sequence number
+    uint32_t first_sequence_in_frame = 0;  // First sequence number in current frame
+
+    // State information
     std::string current_strategy = "UNKNOWN";
     std::string current_frame_state = "IDLE";
     std::string last_error;
+
+    // Timing information (for frame rates/debugging)
+#if ENABLE_STATISTICS_LOGGING
+    std::chrono::steady_clock::time_point last_frame_completion_time;
+    std::chrono::steady_clock::time_point last_error_time;
+#endif
   };
 
   Statistics get_statistics() const;
+
+  /**
+   * @brief Get comprehensive statistics summary for debugging
+   * @return Formatted string with detailed statistics
+   */
+  std::string get_statistics_summary() const;
 
   /**
    * @brief Check if Media Frame Assembler has accumulated data waiting to be copied
@@ -225,6 +260,12 @@ class MediaFrameAssembler {
    * @param event State event that occurred
    */
   void update_statistics(StateEvent event);
+
+  /**
+   * @brief Update packet-specific statistics
+   * @param rtp_params RTP parameters from the packet
+   */
+  void update_packet_statistics(const RtpParams& rtp_params);
 
  private:
   // Core components

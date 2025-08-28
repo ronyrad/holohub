@@ -16,6 +16,7 @@
  */
 
 #include "video_parameters.h"
+#include "adv_network_media_logging.h"
 
 namespace holoscan::ops {
 
@@ -46,7 +47,7 @@ VideoFormatSampling get_video_sampling_format(const std::string& format) {
     return VideoFormatSampling::YCbCr_4_4_4;
 
   // Return CUSTOM for any unsupported format
-  HOLOSCAN_LOG_INFO("Unsupported video sampling format: {}. Using CUSTOM format.", format);
+  ANM_CONFIG_LOG("Unsupported video sampling format: {}. Using CUSTOM format.", format);
   return VideoFormatSampling::CUSTOM;
 }
 
@@ -134,7 +135,7 @@ uint32_t get_channel_count_for_format(nvidia::gxf::VideoFormat format) {
     case nvidia::gxf::VideoFormat::GXF_VIDEO_FORMAT_YUV420_709_ER:
       return 3;
     default:
-      HOLOSCAN_LOG_WARN("Unknown format {}, assuming 3 channels", static_cast<int>(format));
+      ANM_LOG_WARN("Unknown format {}, assuming 3 channels", static_cast<int>(format));
       return 3;
   }
 }
