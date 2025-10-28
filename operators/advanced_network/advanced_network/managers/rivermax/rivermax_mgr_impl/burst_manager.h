@@ -575,21 +575,21 @@ class RxBurstsManager {
    * @brief Resets the current burst.
    */
   inline void reset_current_burst() { cur_out_burst_ = nullptr; }
-  
+
   /**
    * @brief Checks pool capacity and decides whether to drop bursts.
    *
    * @return True if burst should be dropped due to low capacity.
    */
   bool should_drop_burst_due_to_capacity();
-  
+
   /**
    * @brief Logs pool capacity warnings and statistics.
    *
    * @param current_utilization Current pool utilization percentage.
    */
   void log_pool_capacity_status(uint32_t current_utilization) const;
-  
+
   /**
    * @brief Implements generic adaptive burst dropping logic.
    *
@@ -597,8 +597,6 @@ class RxBurstsManager {
    * @return True if burst should be dropped based on network-level policies.
    */
   bool should_drop_burst_adaptive(uint32_t current_utilization) const;
-  
-
 
  protected:
   bool send_packet_ext_info_ = false;
