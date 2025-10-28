@@ -411,8 +411,12 @@ RxBurstsManager::RxBurstsManager(bool send_packet_ext_info, int port_id, int que
   last_capacity_warning_time_ = std::chrono::steady_clock::now();
   last_capacity_critical_time_ = std::chrono::steady_clock::now();
 
-  HOLOSCAN_LOG_INFO("RxBurstsManager initialized: port={}, queue={}, pool_size={}, adaptive_dropping={}",
-                    port_id_, queue_id_, initial_pool_size_, adaptive_dropping_enabled_);
+  HOLOSCAN_LOG_INFO(
+      "RxBurstsManager initialized: port={}, queue={}, pool_size={}, adaptive_dropping={}",
+      port_id_,
+      queue_id_,
+      initial_pool_size_,
+      adaptive_dropping_enabled_);
 }
 
 RxBurstsManager::~RxBurstsManager() {
@@ -430,20 +434,21 @@ RxBurstsManager::~RxBurstsManager() {
 std::string RxBurstsManager::get_pool_status_string() const {
   uint32_t utilization = get_pool_utilization_percent();
   size_t available = rx_bursts_mempool_->available_bursts();
-  
+
   std::ostringstream oss;
-  oss << "Pool Status: " << utilization << "% available (" << available << "/" << initial_pool_size_ << "), ";
-  
-  if (utilization < POOL_CRITICAL_CAPACITY_THRESHOLD_PERCENT) {
+  oss << "Pool Status: " << utilization << "% available (" << available << "/" << initial_pool_size_
+      << "), ";
+
+  if (utilization < pool_critical_threshold_percent_) {
     oss << "CRITICAL";
-  } else if (utilization < POOL_LOW_CAPACITY_THRESHOLD_PERCENT) {
+  } else if (utilization < pool_low_threshold_percent_) {
     oss << "LOW";
-  } else if (utilization < POOL_RECOVERY_THRESHOLD_PERCENT) {
+  } else if (utilization < pool_recovery_threshold_percent_) {
     oss << "RECOVERING";
   } else {
     oss << "HEALTHY";
   }
-  
+
   return oss.str();
 }
 
@@ -461,66 +466,74 @@ bool RxBurstsManager::should_drop_burst_due_to_capacity() {
   if (!adaptive_dropping_enabled_) {
     return false;
   }
-  
+
   // CORE MONITORING: Check memory pool availability
   // utilization = percentage of bursts still available in memory pool
   // Low utilization = pool running out of free bursts = memory pressure
   uint32_t utilization = get_pool_utilization_percent();
-  
+
   // Log capacity status periodically
   log_pool_capacity_status(utilization);
-  
+
   // Critical capacity - definitely drop with video-aware logic
-  if (utilization < POOL_CRITICAL_CAPACITY_THRESHOLD_PERCENT) {
+  if (utilization < pool_critical_threshold_percent_) {
     bursts_dropped_critical_capacity_++;
     total_bursts_dropped_++;
     pool_capacity_critical_events_++;
-    
+
     auto now = std::chrono::steady_clock::now();
-    auto time_since_last = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now - last_capacity_critical_time_).count();
-    
-    if (time_since_last > 1000) { // Log every second
-      HOLOSCAN_LOG_ERROR("CRITICAL: Pool capacity at {}% - dropping new bursts only (port={}, queue={})", 
-                         utilization, port_id_, queue_id_);
+    auto time_since_last =
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - last_capacity_critical_time_)
+            .count();
+
+    if (time_since_last > 1000) {  // Log every second
+      HOLOSCAN_LOG_ERROR(
+          "CRITICAL: Pool capacity at {}% - dropping new bursts only (port={}, queue={})",
+          utilization,
+          port_id_,
+          queue_id_);
       last_capacity_critical_time_ = now;
     }
-    
+
     // In critical mode, use adaptive dropping but be more aggressive
     return should_drop_burst_adaptive(utilization);
   }
-  
+
   // Low capacity - use adaptive dropping policies
-  if (utilization < POOL_LOW_CAPACITY_THRESHOLD_PERCENT) {
+  if (utilization < pool_low_threshold_percent_) {
     bursts_dropped_low_capacity_++;
     total_bursts_dropped_++;
     pool_capacity_warnings_++;
-    
+
     auto now = std::chrono::steady_clock::now();
-    auto time_since_last = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now - last_capacity_warning_time_).count();
-    
-    if (time_since_last > 5000) { // Log every 5 seconds
-      HOLOSCAN_LOG_WARN("LOW: Pool capacity at {}% - adaptive burst dropping (port={}, queue={})", 
-                        utilization, port_id_, queue_id_);
+    auto time_since_last =
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - last_capacity_warning_time_)
+            .count();
+
+    if (time_since_last > 5000) {  // Log every 5 seconds
+      HOLOSCAN_LOG_WARN("LOW: Pool capacity at {}% - adaptive burst dropping (port={}, queue={})",
+                        utilization,
+                        port_id_,
+                        queue_id_);
       last_capacity_warning_time_ = now;
     }
-    
+
     return should_drop_burst_adaptive(utilization);
   }
-  
+
   return false;
 }
 
 void RxBurstsManager::log_pool_capacity_status(uint32_t current_utilization) const {
   static thread_local auto last_status_log = std::chrono::steady_clock::now();
   auto now = std::chrono::steady_clock::now();
-  auto time_since_last = std::chrono::duration_cast<std::chrono::seconds>(now - last_status_log).count();
-  
+  auto time_since_last =
+      std::chrono::duration_cast<std::chrono::seconds>(now - last_status_log).count();
+
   // Log detailed status every 30 seconds when adaptive dropping is enabled
   if (adaptive_dropping_enabled_ && time_since_last > 30) {
-    HOLOSCAN_LOG_INFO("Pool Monitor: {} | {} | Policy: CRITICAL_THRESHOLD | Dropping mode: {}", 
-                      get_pool_status_string(), 
+    HOLOSCAN_LOG_INFO("Pool Monitor: {} | {} | Policy: CRITICAL_THRESHOLD | Dropping mode: {}",
+                      get_pool_status_string(),
                       get_burst_drop_statistics(),
                       in_critical_dropping_mode_ ? "ACTIVE" : "INACTIVE");
     last_status_log = now;
@@ -531,29 +544,35 @@ bool RxBurstsManager::should_drop_burst_adaptive(uint32_t current_utilization) c
   switch (burst_drop_policy_) {
     case BurstDropPolicy::NONE:
       return false;
-      
+
     case BurstDropPolicy::CRITICAL_THRESHOLD:
     default: {
       // CORE LOGIC: Drop new bursts when critical, stop when recovered
-      
+
       // Enter critical dropping mode when pool capacity falls below critical threshold
-      if (current_utilization < POOL_CRITICAL_CAPACITY_THRESHOLD_PERCENT) {
+      if (current_utilization < pool_critical_threshold_percent_) {
         if (!in_critical_dropping_mode_) {
           in_critical_dropping_mode_ = true;
-          HOLOSCAN_LOG_WARN("CRITICAL: Pool capacity {}% - entering burst dropping mode (port={}, queue={})", 
-                           current_utilization, port_id_, queue_id_);
+          HOLOSCAN_LOG_WARN(
+              "CRITICAL: Pool capacity {}% - entering burst dropping mode (port={}, queue={})",
+              current_utilization,
+              port_id_,
+              queue_id_);
         }
-        return true; // Drop ALL new bursts in critical mode
+        return true;  // Drop ALL new bursts in critical mode
       }
-      
+
       // Exit critical dropping mode when pool capacity recovers to target threshold
-      if (in_critical_dropping_mode_ && current_utilization >= POOL_RECOVERY_THRESHOLD_PERCENT) {
+      if (in_critical_dropping_mode_ && current_utilization >= pool_recovery_threshold_percent_) {
         in_critical_dropping_mode_ = false;
-        HOLOSCAN_LOG_INFO("RECOVERY: Pool capacity {}% - exiting burst dropping mode (port={}, queue={})", 
-                          current_utilization, port_id_, queue_id_);
+        HOLOSCAN_LOG_INFO(
+            "RECOVERY: Pool capacity {}% - exiting burst dropping mode (port={}, queue={})",
+            current_utilization,
+            port_id_,
+            queue_id_);
         return false;
       }
-      
+
       // Stay in current mode (dropping or not dropping)
       return in_critical_dropping_mode_;
     }

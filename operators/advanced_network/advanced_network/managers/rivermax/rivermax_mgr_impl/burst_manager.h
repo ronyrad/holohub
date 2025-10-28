@@ -318,16 +318,18 @@ class RxBurstsManager {
  public:
   static constexpr uint32_t DEFAULT_NUM_RX_BURSTS = 256;
   static constexpr uint32_t GET_BURST_TIMEOUT_MS = 1000;
-  
+
   // Pool capacity monitoring thresholds (as percentage of total pool size)
-  static constexpr uint32_t POOL_LOW_CAPACITY_THRESHOLD_PERCENT = 25;     // Warning level
-  static constexpr uint32_t POOL_CRITICAL_CAPACITY_THRESHOLD_PERCENT = 10; // Start dropping
-  static constexpr uint32_t POOL_RECOVERY_THRESHOLD_PERCENT = 50;         // Stop dropping
-  
+  // Default pool capacity thresholds (percentages) - can be overridden via configuration
+  static constexpr uint32_t DEFAULT_POOL_LOW_CAPACITY_THRESHOLD_PERCENT = 25;  // Warning level
+  static constexpr uint32_t DEFAULT_POOL_CRITICAL_CAPACITY_THRESHOLD_PERCENT =
+      10;                                                                  // Start dropping
+  static constexpr uint32_t DEFAULT_POOL_RECOVERY_THRESHOLD_PERCENT = 50;  // Stop dropping
+
   // Burst dropping policies (simplified)
   enum class BurstDropPolicy {
-    NONE = 0,                    // No dropping
-    CRITICAL_THRESHOLD = 1       // Drop new bursts when critical, stop when recovered (default)
+    NONE = 0,               // No dropping
+    CRITICAL_THRESHOLD = 1  // Drop new bursts when critical, stop when recovered (default)
   };
 
   /**
@@ -417,22 +419,23 @@ class RxBurstsManager {
    * @param burst Pointer to the burst parameters.
    */
   void rx_burst_done(RivermaxBurst* burst);
-  
+
   /**
    * @brief Gets the current pool capacity utilization as a percentage.
-   * 
+   *
    * This monitors the MEMORY POOL where we allocate new bursts from.
    * Lower percentage = fewer available bursts = higher memory pressure.
    *
-   * @return Pool utilization percentage (0-100). 
+   * @return Pool utilization percentage (0-100).
    *         100% = all bursts available, 0% = no bursts available (pool exhausted)
    */
   inline uint32_t get_pool_utilization_percent() const {
-    if (initial_pool_size_ == 0) return 0;
+    if (initial_pool_size_ == 0)
+      return 0;
     size_t available = rx_bursts_mempool_->available_bursts();
     return static_cast<uint32_t>((available * 100) / initial_pool_size_);
   }
-  
+
   /**
    * @brief Checks if pool capacity is below the specified threshold.
    *
@@ -442,25 +445,41 @@ class RxBurstsManager {
   inline bool is_pool_capacity_below_threshold(uint32_t threshold_percent) const {
     return get_pool_utilization_percent() < threshold_percent;
   }
-  
+
   /**
    * @brief Gets pool capacity status for monitoring.
    *
    * @return String description of current pool status.
    */
   std::string get_pool_status_string() const;
-  
+
   /**
    * @brief Enables or disables adaptive burst dropping.
    *
    * @param enabled True to enable adaptive dropping.
    * @param policy Burst dropping policy to use.
    */
-  inline void set_adaptive_burst_dropping(bool enabled, BurstDropPolicy policy = BurstDropPolicy::CRITICAL_THRESHOLD) {
+  inline void set_adaptive_burst_dropping(
+      bool enabled, BurstDropPolicy policy = BurstDropPolicy::CRITICAL_THRESHOLD) {
     adaptive_dropping_enabled_ = enabled;
     burst_drop_policy_ = policy;
   }
-  
+
+  /**
+   * @brief Configure pool capacity thresholds for adaptive dropping.
+   *
+   * @param low_threshold_percent Pool capacity % that triggers low capacity warnings (0-100)
+   * @param critical_threshold_percent Pool capacity % that triggers burst dropping (0-100)
+   * @param recovery_threshold_percent Pool capacity % that stops burst dropping (0-100)
+   */
+  inline void configure_pool_thresholds(uint32_t low_threshold_percent,
+                                        uint32_t critical_threshold_percent,
+                                        uint32_t recovery_threshold_percent) {
+    pool_low_threshold_percent_ = low_threshold_percent;
+    pool_critical_threshold_percent_ = critical_threshold_percent;
+    pool_recovery_threshold_percent_ = recovery_threshold_percent;
+  }
+
   /**
    * @brief Gets burst dropping statistics.
    *
@@ -534,7 +553,8 @@ class RxBurstsManager {
 
     // Check if we should drop this COMPLETED burst due to critical pool capacity
     if (should_drop_burst_due_to_capacity()) {
-      // Drop the completed burst by returning it to memory pool instead of enqueuing to output queue
+      // Drop the completed burst by returning it to memory pool instead of enqueuing to output
+      // queue
       rx_bursts_mempool_->enqueue_burst(cur_out_burst_);
       reset_current_burst();
       total_bursts_dropped_++;
@@ -596,22 +616,27 @@ class RxBurstsManager {
   std::shared_ptr<RivermaxBurst> cur_out_burst_ = nullptr;
   AnoBurstExtendedInfo burst_info_;
   std::unique_ptr<RivermaxBurst::BurstHandler> burst_handler_;
-  
+
   // Pool monitoring and adaptive dropping
   size_t initial_pool_size_ = DEFAULT_NUM_RX_BURSTS;
   bool adaptive_dropping_enabled_ = true;
   BurstDropPolicy burst_drop_policy_ = BurstDropPolicy::CRITICAL_THRESHOLD;
-  
+
+  // Configurable thresholds (defaults from constants)
+  uint32_t pool_low_threshold_percent_ = DEFAULT_POOL_LOW_CAPACITY_THRESHOLD_PERCENT;
+  uint32_t pool_critical_threshold_percent_ = DEFAULT_POOL_CRITICAL_CAPACITY_THRESHOLD_PERCENT;
+  uint32_t pool_recovery_threshold_percent_ = DEFAULT_POOL_RECOVERY_THRESHOLD_PERCENT;
+
   // Critical threshold dropping state
-  mutable bool in_critical_dropping_mode_ = false; // Track if we're actively dropping
-  
+  mutable bool in_critical_dropping_mode_ = false;  // Track if we're actively dropping
+
   // Statistics for burst dropping
   mutable std::atomic<uint64_t> total_bursts_dropped_{0};
   mutable std::atomic<uint64_t> bursts_dropped_low_capacity_{0};
   mutable std::atomic<uint64_t> bursts_dropped_critical_capacity_{0};
   mutable std::atomic<uint64_t> pool_capacity_warnings_{0};
   mutable std::atomic<uint64_t> pool_capacity_critical_events_{0};
-  
+
   // Performance monitoring
   mutable std::chrono::steady_clock::time_point last_capacity_warning_time_;
   mutable std::chrono::steady_clock::time_point last_capacity_critical_time_;
